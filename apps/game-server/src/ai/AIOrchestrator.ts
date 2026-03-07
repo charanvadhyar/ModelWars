@@ -9,7 +9,7 @@
 //   6. Return structured move data for GameEngine.applyMove()
 // ─────────────────────────────────────────────────────────────────────────────
 
-import type { Player, GameState, HeatmapGrid } from "../../../../packages/shared/types/game";
+import type { Player, GameState, HeatmapGrid } from "../types/game";
 import type { AIClient, StreamChunkCallback } from "./AIClient";
 import { estimateCostUsd, MATCH_COST_HARD_CAP_USD } from "./AIClient";
 import { buildTurnPrompt, buildRetryPrompt, SYSTEM_PROMPT } from "./PromptBuilder";

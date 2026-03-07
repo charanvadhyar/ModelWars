@@ -13,7 +13,7 @@ import { matchRepository } from "../db/MatchRepository";
 import type {
   ServerToClientEvents,
   ClientToServerEvents,
-} from "../../../../packages/shared/types/events";
+} from "../types/events";
 
 export interface SocketServerOptions {
   corsOrigins: string[];

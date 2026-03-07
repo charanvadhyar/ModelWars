@@ -14,7 +14,7 @@ import type {
   SpectatorCountPayload,
   MatchStartPayload,
   ErrorPayload,
-} from "../../../../packages/shared/types/events";
+} from "../types/events";
 
 export class MatchEventEmitter {
   private readonly io: Server;

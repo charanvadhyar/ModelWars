@@ -4,7 +4,7 @@
 // Handles malformed JSON, missing fields, and invalid coordinates gracefully.
 // ─────────────────────────────────────────────────────────────────────────────
 
-import type { HeatmapGrid, Coord } from "../../../../packages/shared/types/game";
+import type { HeatmapGrid, Coord } from "../types/game";
 import { isValidCoordString, allCoords } from "../engine/coordinates";
 
 export const VALID_STRATEGY_TAGS = [

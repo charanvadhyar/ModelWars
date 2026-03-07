@@ -14,7 +14,7 @@ import {
   type GridCoord,
   ALL_SHIPS,
   SHIP_SIZES,
-} from "../../../../packages/shared/types/game";
+} from "../types/game";
 import { parseCoord, toCoord } from "./coordinates";
 
 /** Internal cell — tracks which ship occupies the cell (if any) */

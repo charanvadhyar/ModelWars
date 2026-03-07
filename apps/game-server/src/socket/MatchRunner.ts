@@ -12,7 +12,7 @@ import type {
   ShipPlacement,
   Move,
   GameState,
-} from "../../../../packages/shared/types/game";
+} from "../types/game";
 import type { StreamChunkCallback } from "../ai/AIClient";
 
 export type MatchRunnerStatus =

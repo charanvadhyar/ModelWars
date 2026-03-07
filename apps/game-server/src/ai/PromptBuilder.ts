@@ -9,7 +9,7 @@ import type {
   GameState,
   Move,
   ShipId,
-} from "../../../../packages/shared/types/game";
+} from "../types/game";
 import { toCoord } from "../engine/coordinates";
 
 // ── System prompt (sent once at game start) ───────────────────────────────────

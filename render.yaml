@@ -1,0 +1,21 @@
+services:
+  - type: web
+    name: model-wars-game-server
+    runtime: node
+    rootDir: apps/game-server
+    buildCommand: npm install
+    startCommand: npx tsx src/index.ts
+    plan: free
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: 3001
+      - key: ANTHROPIC_API_KEY
+        sync: false
+      - key: OPENAI_API_KEY
+        sync: false
+      - key: DATABASE_URL
+        sync: false
+      - key: CORS_ORIGINS
+        sync: false

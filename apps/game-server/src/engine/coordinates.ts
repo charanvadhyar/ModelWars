@@ -3,7 +3,7 @@
 // Human-readable coordinate ↔ grid index conversion and validation
 // ─────────────────────────────────────────────────────────────────────────────
 
-import type { Coord, GridCoord } from "../../../../packages/shared/types/game";
+import type { Coord, GridCoord } from "../types/game";
 
 const ROW_LABELS = "ABCDEFGHIJ";
 const COORD_REGEX = /^([A-J])(10|[1-9])$/;

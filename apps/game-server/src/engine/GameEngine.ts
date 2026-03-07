@@ -13,7 +13,7 @@ import {
   type ShipPlacement,
   type HeatmapGrid,
   type ShotResult,
-} from "../../../../packages/shared/types/game";
+} from "../types/game";
 import { BoardState } from "./BoardState";
 import { validateMove, pickRandomValidMove } from "./MoveValidator";
 import { generateRandomLayout } from "./ShipPlacer";

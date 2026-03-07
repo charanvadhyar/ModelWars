@@ -10,7 +10,7 @@ import type {
   ShipPlacement,
   Player,
   GameState,
-} from "../../../../packages/shared/types/game";
+} from "../types/game";
 import type { MatchCompleteResult } from "../socket/MatchRunner";
 import { estimateCostUsd } from "../ai/AIClient";
 

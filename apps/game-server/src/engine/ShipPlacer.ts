@@ -10,7 +10,7 @@ import {
   type Orientation,
   ALL_SHIPS,
   SHIP_SIZES,
-} from "../../../../packages/shared/types/game";
+} from "../types/game";
 
 const MAX_ATTEMPTS = 1000;
 

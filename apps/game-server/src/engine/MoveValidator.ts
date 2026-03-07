@@ -3,7 +3,7 @@
 // Validates proposed AI moves before they are applied to the board.
 // ─────────────────────────────────────────────────────────────────────────────
 
-import type { Grid, Coord } from "../../../../packages/shared/types/game";
+import type { Grid, Coord } from "../types/game";
 import { isValidCoordString, parseCoord } from "./coordinates";
 
 export type ValidationResult =
