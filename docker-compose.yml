@@ -1,0 +1,43 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# docker-compose.yml
+# Local development environment for Model Wars.
+# Starts PostgreSQL and Adminer (lightweight DB UI).
+#
+# Usage:
+#   docker compose up -d
+#   # Then run: npx prisma migrate dev --name init
+# ─────────────────────────────────────────────────────────────────────────────
+
+version: "3.9"
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: model-wars-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: modelwars
+      POSTGRES_PASSWORD: modelwars_dev
+      POSTGRES_DB: modelwars
+    ports:
+      - "5433:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U modelwars"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  adminer:
+    image: adminer:4
+    container_name: model-wars-adminer
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+volumes:
+  postgres_data:

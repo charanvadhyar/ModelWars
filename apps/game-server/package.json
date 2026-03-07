@@ -1,0 +1,26 @@
+{
+  "name": "@model-wars/game-server",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "npx tsx src/index.ts",
+    "build": "tsc",
+    "db:migrate": "psql $DATABASE_URL -f ../../../db/schema.sql",
+    "test:engine": "npx tsx tests/engine.test.ts",
+    "test:ai": "npx tsx tests/ai.test.ts",
+    "test:socket": "npx tsx tests/socket.test.ts",
+    "test:db": "tsx tests/db.test.ts",
+    "test": "tsx tests/engine.test.ts && tsx tests/ai.test.ts && tsx tests/socket.test.ts && tsx tests/db.test.ts"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.24.0",
+    "dotenv": "^17.3.1",
+    "openai": "^4.47.0",
+    "postgres": "^3.4.4",
+    "socket.io": "^4.7.4"
+  },
+  "devDependencies": {
+    "@types/node": "^20.11.5",
+    "typescript": "^5.3.3"
+  }
+}
