@@ -16,8 +16,8 @@ if (!process.env.DATABASE_URL) {
 }
 
 const sql = postgres(process.env.DATABASE_URL, {
-  max: 10,                // max pool connections
-  idle_timeout: 30,       // close idle connections after 30s
+  max: 3 ,                // max pool connections
+  idle_timeout: 20,       // close idle connections after 30s
   connect_timeout: 10,    // fail fast if DB is unreachable
   transform: {
     // Map snake_case DB columns → camelCase JS automatically
