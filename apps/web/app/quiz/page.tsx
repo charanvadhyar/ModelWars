@@ -73,7 +73,7 @@ export default function QuizListPage() {
     setLaunching(true);
     setError("");
     try {
-      const res = await authFetch(`${SERVER}/api/quiz`, {
+      const res = await authFetch(`/api/quiz`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ modelA, modelB, topic: topic.trim() }),
