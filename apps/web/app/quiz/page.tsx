@@ -76,7 +76,7 @@ export default function QuizListPage() {
           ) : (
             <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
               {quizzes.map((q: any) => (
-                <Link key={q.id} href={`/quiz/${q.id}`} style={{ textDecoration: "none" }}>
+                <Link key={q.id} href={q.status === "COMPLETED" ? `/blog/quiz/${q.id}` : `/quiz/${q.id}`} style={{ textDecoration: "none" }}>
                   <div style={{ display: "flex", alignItems: "center", gap: "12px", padding: "12px 14px", border: "1px solid rgba(255,255,255,0.06)", borderRadius: "3px", background: "rgba(255,255,255,0.01)", cursor: "pointer" }}>
                     <div style={{ flex: 1, overflow: "hidden" }}>
                       <div style={{ fontSize: "12px", color: "var(--text)", marginBottom: "3px", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{q.topic}</div>
