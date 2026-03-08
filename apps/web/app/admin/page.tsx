@@ -20,6 +20,33 @@ const GPT_MODELS = [
 
 const ALL_MODELS = [...CLAUDE_MODELS, ...GPT_MODELS];
 
+const SUGGESTED_TOPICS = [
+  "Machine Learning & Neural Networks",
+  "World History 1900–2000",
+  "Quantum Physics",
+  "Philosophy of Mind",
+  "Climate Science",
+  "Mathematics & Number Theory",
+  "Evolutionary Biology",
+  "Computer Science Fundamentals",
+  "Economics & Game Theory",
+  "Astronomy & Cosmology",
+];
+
+const QUIZ_PHASE_LABEL: Record<string, string> = {
+  PREPARING:   "PREPARING",
+  ANSWERING_B: "LIVE",
+  ANSWERING_A: "LIVE",
+  COMPLETED:   "COMPLETE",
+};
+
+const QUIZ_PHASE_COLOR: Record<string, string> = {
+  PREPARING:   "var(--amber)",
+  ANSWERING_B: "#44ff88",
+  ANSWERING_A: "#44ff88",
+  COMPLETED:   "var(--text-dim)",
+};
+
 // ── Sub-components ────────────────────────────────────────────────────────────
 
 function StatCard({ label, value, accent = "var(--text-mid)" }: {
@@ -66,6 +93,15 @@ export default function AdminPage() {
   const [launchSuccess,   setLaunchSuccess]   = useState("");
   const [downloading,     setDownloading]     = useState<string | null>(null);
 
+  // Quiz state
+  const [quizzes,         setQuizzes]         = useState<any[]>([]);
+  const [quizModelA,      setQuizModelA]      = useState(CLAUDE_MODELS[1].id);
+  const [quizModelB,      setQuizModelB]      = useState(GPT_MODELS[0].id);
+  const [quizTopic,       setQuizTopic]       = useState("");
+  const [quizLaunching,   setQuizLaunching]   = useState(false);
+  const [quizError,       setQuizError]       = useState("");
+  const [quizSuccess,     setQuizSuccess]     = useState("");
+
   // Redirect if not admin
   useEffect(() => {
     if (!loading && (!user || user.role !== "ADMIN")) {
@@ -75,16 +111,18 @@ export default function AdminPage() {
 
   const loadData = useCallback(async () => {
     try {
-      const [statsRes, matchesRes, pastRes, usersRes] = await Promise.all([
+      const [statsRes, matchesRes, pastRes, usersRes, quizzesRes] = await Promise.all([
         authFetch("/api/admin/stats"),
         authFetch("/api/matches"),
         authFetch("/api/matches/history?status=COMPLETED&limit=50"),
         authFetch("/api/admin/users"),
+        fetch((process.env.NEXT_PUBLIC_GAME_SERVER_URL ?? "http://localhost:3001") + "/api/quiz"),
       ]);
       if (statsRes.ok)   setStats(await statsRes.json());
       if (matchesRes.ok) setActiveMatches((await matchesRes.json()).matches ?? []);
       if (pastRes.ok)    setPastMatches((await pastRes.json()).matches ?? []);
       if (usersRes.ok)   setUsers((await usersRes.json()).users ?? []);
+      if (quizzesRes.ok) setQuizzes((await quizzesRes.json()).quizzes ?? []);
     } catch {}
   }, [authFetch]);
 
@@ -134,6 +172,28 @@ export default function AdminPage() {
       setLaunchError(e.message);
     } finally {
       setLaunching(false);
+    }
+  };
+
+  const launchQuiz = async () => {
+    if (!quizTopic.trim()) { setQuizError("Topic is required."); return; }
+    if (quizModelA === quizModelB) { setQuizError("Select two different models."); return; }
+    setQuizLaunching(true); setQuizError(""); setQuizSuccess("");
+    try {
+      const res = await authFetch("/api/quiz", {
+        method: "POST",
+        body: JSON.stringify({ modelA: quizModelA, modelB: quizModelB, topic: quizTopic.trim() }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error);
+      setQuizSuccess(`Quiz launched — ID: ${data.quizId}`);
+      setQuizTopic("");
+      loadData();
+      setTimeout(() => router.push(`/quiz/${data.quizId}`), 1200);
+    } catch (e: any) {
+      setQuizError(e.message);
+    } finally {
+      setQuizLaunching(false);
     }
   };
 
@@ -382,6 +442,146 @@ export default function AdminPage() {
         )}
       </section>
 
+      {/* ── Launch quiz ──────────────────────────────────────────────────── */}
+      <section>
+        <SectionHeader title="LAUNCH QUIZ" />
+        <div style={{
+          padding: "20px", background: "var(--bg2)",
+          border: "1px solid rgba(255,68,136,0.3)", borderRadius: "4px",
+          display: "flex", flexDirection: "column", gap: "14px",
+        }}>
+          {/* Topic */}
+          <div>
+            <div style={{ fontSize: "8px", letterSpacing: "3px", color: "#ff4488", marginBottom: "6px" }}>TOPIC</div>
+            <input
+              value={quizTopic}
+              onChange={e => setQuizTopic(e.target.value)}
+              placeholder="e.g. Quantum Physics"
+              style={{
+                width: "100%", background: "var(--bg3)", border: "1px solid rgba(255,68,136,0.3)",
+                borderRadius: "3px", padding: "8px 12px", color: "var(--text)",
+                fontFamily: "var(--font-mono)", fontSize: "13px", boxSizing: "border-box",
+              }}
+            />
+            <div style={{ display: "flex", flexWrap: "wrap", gap: "5px", marginTop: "8px" }}>
+              {SUGGESTED_TOPICS.map(t => (
+                <button key={t} onClick={() => setQuizTopic(t)} style={{
+                  fontSize: "9px", padding: "3px 8px",
+                  background: "transparent", border: "1px solid var(--grid-line)",
+                  borderRadius: "2px", color: "var(--text-dim)", cursor: "pointer",
+                  fontFamily: "var(--font-mono)",
+                }}>
+                  {t}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Models */}
+          <div style={{ display: "grid", gridTemplateColumns: "1fr auto 1fr", gap: "12px", alignItems: "center" }}>
+            <div>
+              <div style={{ fontSize: "8px", letterSpacing: "3px", color: "var(--amber)", marginBottom: "6px" }}>PLAYER A</div>
+              <select value={quizModelA} onChange={e => setQuizModelA(e.target.value)} style={{ ...selectStyle, borderColor: "var(--amber-dim)", color: "var(--amber)" }}>
+                {ALL_MODELS.map(m => <option key={m.id} value={m.id}>{m.label}</option>)}
+              </select>
+            </div>
+            <div style={{ fontFamily: "var(--font-hud)", fontSize: "20px", fontWeight: 900, color: "var(--text-dim)", textAlign: "center" }}>VS</div>
+            <div>
+              <div style={{ fontSize: "8px", letterSpacing: "3px", color: "var(--cyan)", marginBottom: "6px" }}>PLAYER B</div>
+              <select value={quizModelB} onChange={e => setQuizModelB(e.target.value)} style={{ ...selectStyle, borderColor: "var(--cyan-dim)", color: "var(--cyan)" }}>
+                {ALL_MODELS.map(m => <option key={m.id} value={m.id}>{m.label}</option>)}
+              </select>
+            </div>
+          </div>
+
+          {quizError && (
+            <div style={{ padding: "8px 12px", background: "rgba(80,0,0,0.4)", border: "1px solid #600000", borderRadius: "3px", fontSize: "11px", color: "#ff6060" }}>⚠ {quizError}</div>
+          )}
+          {quizSuccess && (
+            <div style={{ padding: "8px 12px", background: "rgba(0,60,0,0.4)", border: "1px solid #006000", borderRadius: "3px", fontSize: "11px", color: "#40ff80", letterSpacing: "1px" }}>✓ {quizSuccess}</div>
+          )}
+
+          <button onClick={launchQuiz} disabled={quizLaunching} style={{
+            padding: "12px 24px", alignSelf: "flex-start",
+            background: quizLaunching ? "var(--bg3)" : "rgba(255,68,136,0.1)",
+            border: `1px solid ${quizLaunching ? "var(--grid-line)" : "rgba(255,68,136,0.4)"}`,
+            borderRadius: "3px",
+            color: quizLaunching ? "var(--text-dim)" : "#ff4488",
+            fontFamily: "var(--font-mono)", fontSize: "12px",
+            letterSpacing: "3px", cursor: quizLaunching ? "not-allowed" : "pointer",
+            transition: "all 0.2s",
+          }}>
+            {quizLaunching ? "LAUNCHING..." : "▶ LAUNCH QUIZ"}
+          </button>
+        </div>
+      </section>
+
+      {/* ── Quiz history ─────────────────────────────────────────────────── */}
+      <section>
+        <SectionHeader title={`QUIZZES (${quizzes.length})`} />
+        {quizzes.length === 0 ? (
+          <div style={{ padding: "20px", textAlign: "center", border: "1px solid var(--grid-line)", borderRadius: "4px", fontSize: "11px", color: "var(--text-dim)", letterSpacing: "2px" }}>
+            NO QUIZZES YET
+          </div>
+        ) : (
+          <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
+            {quizzes.map((q: any) => {
+              const isLive = q.status === "ANSWERING_A" || q.status === "ANSWERING_B" || q.status === "PREPARING";
+              return (
+                <div key={q.id} style={{
+                  display: "grid", gridTemplateColumns: "1fr auto auto auto auto",
+                  gap: "12px", alignItems: "center",
+                  padding: "10px 14px", background: "var(--bg2)",
+                  border: `1px solid ${isLive ? "rgba(255,68,136,0.2)" : "var(--grid-line)"}`,
+                  borderRadius: "4px",
+                }}>
+                  <div>
+                    <div style={{ fontSize: "11px", color: "var(--text)", marginBottom: "2px", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                      {q.topic}
+                    </div>
+                    <div style={{ fontSize: "9px", color: "var(--text-dim)" }}>
+                      <span style={{ color: "var(--amber)" }}>{q.modelA.split("-")[0]}</span>
+                      {" vs "}
+                      <span style={{ color: "var(--cyan)" }}>{q.modelB.split("-")[0]}</span>
+                    </div>
+                  </div>
+
+                  {q.status === "COMPLETED" && q.scoreA != null && (
+                    <div style={{ fontFamily: "var(--font-hud)", fontSize: "14px", whiteSpace: "nowrap" }}>
+                      <span style={{ color: "var(--amber)" }}>{q.scoreA}</span>
+                      <span style={{ color: "var(--text-dim)", margin: "0 4px" }}>—</span>
+                      <span style={{ color: "var(--cyan)" }}>{q.scoreB}</span>
+                    </div>
+                  )}
+
+                  <span style={{
+                    fontSize: "9px", letterSpacing: "1px", padding: "2px 8px",
+                    borderRadius: "2px",
+                    color: QUIZ_PHASE_COLOR[q.status] ?? "var(--text-dim)",
+                    border: `1px solid ${QUIZ_PHASE_COLOR[q.status] ?? "var(--grid-line)"}22`,
+                    animation: isLive ? "pulseDot 1.5s infinite" : "none",
+                  }}>
+                    {QUIZ_PHASE_LABEL[q.status] ?? q.status}
+                  </span>
+
+                  <span style={{ fontSize: "9px", color: "var(--text-dim)", letterSpacing: "1px" }}>
+                    {q.id.slice(0, 8).toUpperCase()}
+                  </span>
+
+                  <a href={`/quiz/${q.id}`} style={{
+                    fontSize: "10px", letterSpacing: "1px", padding: "4px 10px",
+                    border: "1px solid rgba(255,68,136,0.3)", borderRadius: "2px",
+                    color: "#ff4488", textDecoration: "none",
+                  }}>
+                    {isLive ? "WATCH" : "REVIEW"}
+                  </a>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </section>
+
       {/* ── User management ─────────────────────────────────────────────── */}
       <section>
         <SectionHeader title={`USERS (${users.length})`} />
@@ -453,6 +653,8 @@ export default function AdminPage() {
           </div>
         </section>
       )}
+
+      <style>{`@keyframes pulseDot{0%,100%{opacity:1}50%{opacity:0.3}}`}</style>
     </div>
   );
 }
