@@ -218,6 +218,15 @@ export class GameEngine {
     return [...this.moveHistory];
   }
 
+  /**
+   * Declare a forfeit — the losing player's model failed to produce valid moves.
+   * The opponent is awarded the win immediately.
+   */
+  forfeit(losingPlayer: Player): void {
+    if (this.winner !== undefined) return;
+    this.winner = losingPlayer === "A" ? "B" : "A";
+  }
+
   /** Duration in ms since match start */
   getDurationMs(): number {
     return Date.now() - this.startedAt;

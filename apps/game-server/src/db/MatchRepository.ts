@@ -39,6 +39,9 @@ interface MatchRow {
   totalCostUs: number | null;
   shipLayoutA: ShipPlacement[];
   shipLayoutB: ShipPlacement[];
+  placementReasoningA: string | null;
+  placementReasoningB: string | null;
+  forfeited: boolean;
   createdById: string | null;
   startedAt: Date | null;
   completedAt: Date | null;
@@ -79,12 +82,15 @@ export class MatchRepository {
     modelB: string;
     shipLayoutA: ShipPlacement[];
     shipLayoutB: ShipPlacement[];
+    placementReasoningA?: string;
+    placementReasoningB?: string;
     createdById?: string;
   }): Promise<void> {
     await sql`
       INSERT INTO matches (
         id, status, model_a, model_b,
         ship_layout_a, ship_layout_b,
+        placement_reasoning_a, placement_reasoning_b,
         created_by_id, started_at
       ) VALUES (
         ${params.matchId},
@@ -93,6 +99,8 @@ export class MatchRepository {
         ${params.modelB},
         ${sql.json(params.shipLayoutA)},
         ${sql.json(params.shipLayoutB)},
+        ${params.placementReasoningA ?? null},
+        ${params.placementReasoningB ?? null},
         ${params.createdById ?? null},
         NOW()
       )
@@ -144,7 +152,19 @@ export class MatchRepository {
     finalState: GameState
   ): Promise<string> {
     const transcriptId = crypto.randomUUID();
-    const transcriptJson = buildTranscriptJson(matchId, result, finalState);
+
+    // Fetch placement data already stored at match start
+    const [placement] = await sql<[{
+      shipLayoutA: ShipPlacement[];
+      shipLayoutB: ShipPlacement[];
+      placementReasoningA: string | null;
+      placementReasoningB: string | null;
+    }]>`
+      SELECT ship_layout_a, ship_layout_b, placement_reasoning_a, placement_reasoning_b
+      FROM matches WHERE id = ${matchId}
+    `;
+
+    const transcriptJson = buildTranscriptJson(matchId, result, finalState, placement ?? null);
 
     await sql.begin(async (tx) => {
       await tx`
@@ -154,6 +174,7 @@ export class MatchRepository {
           total_turns   = ${result.totalTurns},
           duration_ms   = ${result.durationMs},
           total_cost_us = ${toMicroUsd(result.totalCostUsd)},
+          forfeited     = ${result.forfeited},
           completed_at  = NOW()
         WHERE id = ${matchId}
       `;
@@ -324,18 +345,35 @@ export class MatchRepository {
 function buildTranscriptJson(
   matchId: string,
   result: MatchCompleteResult,
-  finalState: GameState
+  finalState: GameState,
+  placement: {
+    shipLayoutA: ShipPlacement[];
+    shipLayoutB: ShipPlacement[];
+    placementReasoningA: string | null;
+    placementReasoningB: string | null;
+  } | null
 ): object {
   return {
-    version:      "1.0",
+    version:      "2.0",
     matchId,
     modelA:       finalState.modelA,
     modelB:       finalState.modelB,
     winner:       result.winner,
+    forfeited:    result.forfeited,
     totalTurns:   result.totalTurns,
     durationMs:   result.durationMs,
     totalCostUsd: result.totalCostUsd,
     exportedAt:   new Date().toISOString(),
+
+    // Ship placement phase
+    placement: placement ? {
+      layoutA:    placement.shipLayoutA,
+      layoutB:    placement.shipLayoutB,
+      reasoningA: placement.placementReasoningA ?? null,
+      reasoningB: placement.placementReasoningB ?? null,
+    } : null,
+
+    // Full move-by-move record with heatmaps
     moves: finalState.moveHistory.map((m) => ({
       turn:             m.turnNumber,
       player:           m.player,
@@ -344,11 +382,14 @@ function buildTranscriptJson(
       shipSunkId:       m.shipSunkId ?? null,
       reasoning:        m.reasoning,
       strategyTag:      m.strategyTag ?? null,
+      heatmap:          m.heatmap,          // full 10×10 grid
       promptTokens:     m.promptTokens,
       completionTokens: m.completionTokens,
       latencyMs:        m.latencyMs,
       timestamp:        m.timestamp,
     })),
+
+    // Final fleet state for both players
     finalFleetA: finalState.playerA.fleet,
     finalFleetB: finalState.playerB.fleet,
   };

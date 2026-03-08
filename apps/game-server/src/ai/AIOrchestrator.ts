@@ -9,12 +9,14 @@
 //   6. Return structured move data for GameEngine.applyMove()
 // ─────────────────────────────────────────────────────────────────────────────
 
-import type { Player, GameState, HeatmapGrid } from "../types/game";
+import type { Player, GameState, HeatmapGrid, ShipPlacement } from "../types/game";
 import type { AIClient, StreamChunkCallback } from "./AIClient";
 import { estimateCostUsd, MATCH_COST_HARD_CAP_USD } from "./AIClient";
-import { buildTurnPrompt, buildRetryPrompt, SYSTEM_PROMPT } from "./PromptBuilder";
+import { buildTurnPrompt, buildRetryPrompt, buildPlacementPrompt, buildPlacementRetryPrompt, SYSTEM_PROMPT } from "./PromptBuilder";
 import { parseModelResponse } from "./ResponseParser";
+import { parsePlacementResponse } from "./PlacementParser";
 import { validateMove, pickRandomValidMove } from "../engine/MoveValidator";
+import { generateRandomLayout } from "../engine/ShipPlacer";
 import type { AIMessage } from "./AIClient";
 
 const MAX_RETRIES = 3;
@@ -31,6 +33,12 @@ export interface OrchestratorTurnResult {
   latencyMs: number;
   /** True if the server had to pick a random move due to repeated AI failures */
   isFallback: boolean;
+  /**
+   * True when the model failed to produce valid output (retries exhausted or API error).
+   * MatchRunner should treat this as a forfeit and end the match immediately.
+   * False when isFallback is due to cost cap — game continues normally.
+   */
+  forfeited: boolean;
   /** Estimated USD cost for this turn */
   costUsd: number;
 }
@@ -75,7 +83,8 @@ export class AIOrchestrator {
       callbacks.onFallback?.(
         `Match cost cap of $${MATCH_COST_HARD_CAP_USD} reached. Using random move.`
       );
-      return this.makeFallbackResult(coord, "Cost cap reached.");
+      // Not a forfeit — cost cap applies equally to both sides
+      return this.makeFallbackResult(coord, "Cost cap reached.", false);
     }
 
     const client = player === "A" ? this.clientA : this.clientB;
@@ -108,10 +117,10 @@ export class AIOrchestrator {
       try {
         response = await client.complete(messages, chunkCallback);
       } catch (err: any) {
-        // API error (timeout, rate limit, etc.) — use fallback immediately
+        // API error (timeout, rate limit, etc.) — forfeit immediately
         callbacks.onFallback?.(err.message);
         const coord = pickRandomValidMove(targetingGrid);
-        return this.makeFallbackResult(coord, err.message);
+        return this.makeFallbackResult(coord, err.message, true);
       }
 
       totalPromptTokens += response.promptTokens;
@@ -171,16 +180,67 @@ export class AIOrchestrator {
         completionTokens: totalCompletionTokens,
         latencyMs: totalLatencyMs,
         isFallback: false,
+        forfeited: false,
         costUsd,
       };
     }
 
-    // ── All retries exhausted — use fallback ───────────────────────────────
+    // ── All retries exhausted — forfeit ────────────────────────────────────
     callbacks.onFallback?.(
-      `AI failed to produce a valid move after ${MAX_RETRIES} attempts. Using random move.`
+      `AI failed to produce a valid move after ${MAX_RETRIES} attempts. Match forfeited.`
     );
     const coord = pickRandomValidMove(targetingGrid);
-    return this.makeFallbackResult(coord, `Exhausted ${MAX_RETRIES} retries.`);
+    return this.makeFallbackResult(coord, `Exhausted ${MAX_RETRIES} retries.`, true);
+  }
+
+  /**
+   * Ask the model to place its own fleet before the match starts.
+   * Attempts up to MAX_RETRIES; falls back to a random layout on failure.
+   * Returns the chosen ShipPlacement array.
+   */
+  async placeFleet(
+    player: Player,
+    callbacks: {
+      onReasoningChunk: StreamChunkCallback;
+      onFallback?: (reason: string) => void;
+    }
+  ): Promise<{ placements: ShipPlacement[]; reasoning: string }> {
+    const client = player === "A" ? this.clientA : this.clientB;
+    const messages: AIMessage[] = [];
+    let lastRawResponse = "";
+
+    for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
+      const userContent =
+        attempt === 1
+          ? buildPlacementPrompt()
+          : buildPlacementRetryPrompt(lastRawResponse, "See validation_error field.", attempt);
+
+      messages.push({ role: "user", content: userContent });
+
+      let response;
+      try {
+        response = await client.complete(messages, (_text, _done) => {});
+      } catch (err: any) {
+        callbacks.onFallback?.(`API error during placement: ${err.message}. Using random layout.`);
+        return { placements: generateRandomLayout(), reasoning: "[API error — random layout used]" };
+      }
+
+      lastRawResponse = response.text;
+      messages.push({ role: "assistant", content: response.text });
+
+      const parsed = parsePlacementResponse(response.text);
+      if (!parsed.success) {
+        console.warn(`[Placement] Player ${player} attempt ${attempt} failed: ${parsed.error}`);
+        continue;
+      }
+
+      // Emit placement reasoning to spectators
+      callbacks.onReasoningChunk(parsed.reasoning, true);
+      return { placements: parsed.placements, reasoning: parsed.reasoning };
+    }
+
+    callbacks.onFallback?.(`Failed to place fleet after ${MAX_RETRIES} attempts. Using random layout.`);
+    return { placements: generateRandomLayout(), reasoning: "[Failed after retries — random layout used]" };
   }
 
   /** Current cumulative match cost in USD */
@@ -192,7 +252,8 @@ export class AIOrchestrator {
 
   private makeFallbackResult(
     coord: string,
-    reason: string
+    reason: string,
+    forfeited: boolean
   ): OrchestratorTurnResult {
     return {
       coord,
@@ -202,6 +263,7 @@ export class AIOrchestrator {
       completionTokens: 0,
       latencyMs: 0,
       isFallback: true,
+      forfeited,
       costUsd: 0,
     };
   }

@@ -59,13 +59,15 @@ export class SocketServer {
 
       // ── Phase 4: DB hooks ──────────────────────────────────────────────────
 
-      onMatchStart: async (matchId, layoutA, layoutB) => {
+      onMatchStart: async (matchId, layoutA, layoutB, reasoningA, reasoningB) => {
         await matchRepository.createMatch({
           matchId,
           modelA: options.modelA,
           modelB: options.modelB,
           shipLayoutA: layoutA,
           shipLayoutB: layoutB,
+          placementReasoningA: reasoningA,
+          placementReasoningB: reasoningB,
           createdById: options.createdById,
         });
       },

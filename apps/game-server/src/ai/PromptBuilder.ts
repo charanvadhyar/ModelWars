@@ -136,6 +136,63 @@ export function buildRetryPrompt(
   });
 }
 
+// ── Placement prompt ───────────────────────────────────────────────────────────
+
+/**
+ * Build the fleet-placement prompt sent to each model before the match begins.
+ * The model must return a JSON object specifying where to place all 5 ships.
+ */
+export function buildPlacementPrompt(): string {
+  return JSON.stringify({
+    phase: "FLEET_PLACEMENT",
+    instruction:
+      "Before the match begins, choose positions for your 5 ships. Ships may be placed horizontally (H, extends right) or vertically (V, extends down). Ships cannot overlap or go out of bounds. Return ONLY a valid JSON object — no prose, no markdown.",
+    grid: "10x10 — rows A-J (top to bottom), columns 1-10 (left to right)",
+    ships: [
+      { ship: "CARRIER",    size: 5 },
+      { ship: "BATTLESHIP", size: 4 },
+      { ship: "CRUISER",    size: 3 },
+      { ship: "SUBMARINE",  size: 3 },
+      { ship: "DESTROYER",  size: 2 },
+    ],
+    schema: {
+      placements: [
+        { ship: "CARRIER",    start: "A1", orientation: "H" },
+        { ship: "BATTLESHIP", start: "C5", orientation: "V" },
+        { ship: "CRUISER",    start: "E2", orientation: "H" },
+        { ship: "SUBMARINE",  start: "G7", orientation: "V" },
+        { ship: "DESTROYER",  start: "J3", orientation: "H" },
+      ],
+      reasoning: "PLACEMENT: [your strategic rationale — e.g. dispersal, edge play, clustering]",
+    },
+    notes: [
+      "start is the top-left-most cell the ship occupies",
+      "H ships extend RIGHT from start; V ships extend DOWN from start",
+      "All 5 ships must be placed, each exactly once",
+      "CARRIER size 5 with H at A6 occupies A6,A7,A8,A9,A10 — valid",
+      "CARRIER size 5 with H at A8 would extend past column 10 — invalid",
+    ],
+  }, null, 2);
+}
+
+/**
+ * Build the re-prompt message when a model returns an invalid placement.
+ */
+export function buildPlacementRetryPrompt(
+  previousResponse: string,
+  validationError: string,
+  attemptNumber: number
+): string {
+  return JSON.stringify({
+    error: "INVALID_PLACEMENT",
+    attempt: attemptNumber,
+    validation_error: validationError,
+    your_previous_response: previousResponse.slice(0, 400),
+    instruction:
+      "Your placement was invalid. Fix the error and return ONLY a valid JSON object with all 5 ships placed correctly.",
+  });
+}
+
 // ── ASCII grid builder ─────────────────────────────────────────────────────────
 
 function buildAsciiGrid(grid: string[][]): string {

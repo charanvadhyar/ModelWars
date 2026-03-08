@@ -26,6 +26,7 @@ export interface MatchCompleteResult {
   totalTurns: number;
   durationMs: number;
   totalCostUsd: number;
+  forfeited: boolean;
 }
 
 export interface MatchRunnerOptions {
@@ -37,7 +38,9 @@ export interface MatchRunnerOptions {
   onMatchStart?: (
     matchId: string,
     layoutA: ShipPlacement[],
-    layoutB: ShipPlacement[]
+    layoutB: ShipPlacement[],
+    reasoningA: string,
+    reasoningB: string
   ) => Promise<void>;
   /** Called after each move — use to persist move to DB */
   onMoveComplete?: (matchId: string, move: Move) => Promise<void>;
@@ -59,6 +62,7 @@ export class MatchRunner {
   private emitter: MatchEventEmitter;
   private status: MatchRunnerStatus = "IDLE";
   private abortRequested = false;
+  private matchForfeited = false;
 
   private readonly onMatchStart?: MatchRunnerOptions["onMatchStart"];
   private readonly onMoveComplete?: MatchRunnerOptions["onMoveComplete"];
@@ -84,17 +88,48 @@ export class MatchRunner {
     this.status = "RUNNING";
 
     try {
+      this.orchestrator = await createOrchestrator(this.modelA, this.modelB);
+
+      // ── Fleet placement phase — both models choose positions in parallel ───
+      console.log(`[Match ${this.matchId}] Fleet placement phase starting...`);
+      const [resultA, resultB] = await Promise.all([
+        this.orchestrator.placeFleet("A", {
+          onReasoningChunk: (text, done) => {
+            this.emitter.reasoningChunk(this.matchId, {
+              matchId: this.matchId, player: "A", model: this.modelA,
+              text, turnNumber: 0, done,
+            });
+          },
+          onFallback: (reason) => {
+            console.warn(`[Match ${this.matchId}] Player A placement fallback: ${reason}`);
+          },
+        }),
+        this.orchestrator.placeFleet("B", {
+          onReasoningChunk: (text, done) => {
+            this.emitter.reasoningChunk(this.matchId, {
+              matchId: this.matchId, player: "B", model: this.modelB,
+              text, turnNumber: 0, done,
+            });
+          },
+          onFallback: (reason) => {
+            console.warn(`[Match ${this.matchId}] Player B placement fallback: ${reason}`);
+          },
+        }),
+      ]);
+      const layoutA = resultA.placements;
+      const layoutB = resultB.placements;
+      console.log(`[Match ${this.matchId}] Fleet placement complete.`);
+
       this.engine = new GameEngine({
         matchId: this.matchId,
         modelA: this.modelA,
         modelB: this.modelB,
+        layoutA,
+        layoutB,
       });
 
-      this.orchestrator = await createOrchestrator(this.modelA, this.modelB);
-      const { layoutA, layoutB } = this.engine.getLayouts();
-
       // Persist initial match record before first turn
-      await this.onMatchStart?.(this.matchId, layoutA, layoutB);
+      await this.onMatchStart?.(this.matchId, layoutA, layoutB, resultA.reasoning, resultB.reasoning);
 
       // Broadcast match start with both ship layouts visible to spectators
       this.emitter.matchStart(this.matchId, {
@@ -171,14 +206,21 @@ export class MatchRunner {
         });
       },
       onFallback: (reason) => {
-        console.error(`[Match ${this.matchId}] Fallback move for ${model}: ${reason}`);
+        console.error(`[Match ${this.matchId}] Fallback/forfeit for ${model}: ${reason}`);
         this.emitter.error(this.matchId, {
-          code: "AI_FALLBACK",
-          message: `${model} failed after 3 attempts. Server chose a random move.`,
-          recoverable: true,
+          code: "AI_FORFEIT",
+          message: `${model} failed to produce a valid move after 3 attempts — match forfeited.`,
+          recoverable: false,
         });
       },
     });
+
+    // If the model forfeited (retries exhausted or API error), end match immediately
+    if (turnResult.forfeited) {
+      this.matchForfeited = true;
+      engine.forfeit(player);
+      return;
+    }
 
     const { move, gameOver } = engine.applyMove({
       player,
@@ -243,7 +285,7 @@ export class MatchRunner {
     // Persist to DB
     await this.onMatchComplete?.(
       this.matchId,
-      { winner, totalTurns, durationMs, totalCostUsd },
+      { winner, totalTurns, durationMs, totalCostUsd, forfeited: this.matchForfeited },
       finalState
     );
 

@@ -37,6 +37,17 @@ export default function MatchPage({ params }: Params) {
     });
   }, [on, gs.modelA, gs.modelB]);
 
+  // Track forfeit — set when AI_FORFEIT error received before game over
+  const [forfeitedPlayer, setForfeitedPlayer] = useState<"A" | "B" | null>(null);
+  useEffect(() => {
+    return on("ERROR", (payload: any) => {
+      if (payload.code === "AI_FORFEIT") {
+        // The current player at time of forfeit is the loser
+        setForfeitedPlayer(gs.currentPlayer);
+      }
+    });
+  }, [on, gs.currentPlayer]);
+
   // Accumulate full reasoning per completed turn
   const [reasoningLog, setReasoningLog] = useState<{ turn: number; player: "A"|"B"; model: string; reasoning: string }[]>([]);
   useEffect(() => {
@@ -129,6 +140,11 @@ export default function MatchPage({ params }: Params) {
             MATCH {matchId.slice(0, 8).toUpperCase()}
           </span>
 
+          {status === "connected" && !gs.connected && !gs.isGameOver && (
+            <span style={{ color:"var(--cyan)", letterSpacing:"2px", animation:"pulseDot 1.2s infinite" }}>
+              ◈ PLACING FLEET
+            </span>
+          )}
           {gs.isGameOver && (
             <span style={{ color:"var(--amber)", letterSpacing:"2px" }}>■ MATCH COMPLETE</span>
           )}
@@ -184,6 +200,7 @@ export default function MatchPage({ params }: Params) {
           moveLog={moveLog}
           isGameOver={gs.isGameOver}
           winner={gs.winner}
+          forfeitedPlayer={forfeitedPlayer}
           onAbort={user?.role === "ADMIN" ? handleAbort : undefined}
           onDownload={moveLog.length > 0 || reasoningLog.length > 0 ? handleDownload : undefined}
         />

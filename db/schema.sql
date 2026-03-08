@@ -58,8 +58,15 @@ CREATE TABLE IF NOT EXISTS matches (
   total_cost_us   INTEGER,          -- micro-USD: $0.42 → 420000
 
   -- Ship layouts stored as JSONB (ShipPlacement[])
-  ship_layout_a   JSONB        NOT NULL DEFAULT '[]',
-  ship_layout_b   JSONB        NOT NULL DEFAULT '[]',
+  ship_layout_a         JSONB        NOT NULL DEFAULT '[]',
+  ship_layout_b         JSONB        NOT NULL DEFAULT '[]',
+
+  -- Model's own reasoning for fleet placement
+  placement_reasoning_a TEXT,
+  placement_reasoning_b TEXT,
+
+  -- True when a model forfeited (failed to produce valid moves after retries)
+  forfeited             BOOLEAN      NOT NULL DEFAULT FALSE,
 
   created_by_id   UUID,
   started_at      TIMESTAMPTZ,
@@ -122,3 +129,9 @@ CREATE TABLE IF NOT EXISTS transcripts (
   CONSTRAINT transcripts_match_fkey
     FOREIGN KEY (match_id) REFERENCES matches (id) ON DELETE CASCADE
 );
+
+-- ── Migrations (idempotent — safe to re-run on existing databases) ─────────────
+
+ALTER TABLE matches ADD COLUMN IF NOT EXISTS placement_reasoning_a TEXT;
+ALTER TABLE matches ADD COLUMN IF NOT EXISTS placement_reasoning_b TEXT;
+ALTER TABLE matches ADD COLUMN IF NOT EXISTS forfeited BOOLEAN NOT NULL DEFAULT FALSE;

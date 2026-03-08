@@ -3,16 +3,17 @@
 
 interface LogEntry { turn: number; player: "A"|"B"; coord: string; result: string; model: string; }
 interface Props {
-  turn:          number;
-  currentPlayer: "A" | "B";
-  modelA:        string;
-  modelB:        string;
-  spectators:    number;
-  moveLog:       LogEntry[];
-  isGameOver:    boolean;
-  winner:        "A" | "B" | null;
-  onAbort?:      () => void;
-  onDownload?:   () => void;
+  turn:             number;
+  currentPlayer:    "A" | "B";
+  modelA:           string;
+  modelB:           string;
+  spectators:       number;
+  moveLog:          LogEntry[];
+  isGameOver:       boolean;
+  winner:           "A" | "B" | null;
+  forfeitedPlayer?: "A" | "B" | null;
+  onAbort?:         () => void;
+  onDownload?:      () => void;
 }
 
 function shortModel(m: string): string {
@@ -28,7 +29,7 @@ function shortModel(m: string): string {
 
 export function CenterPanel({
   turn, currentPlayer, modelA, modelB,
-  spectators, moveLog, isGameOver, winner, onAbort, onDownload,
+  spectators, moveLog, isGameOver, winner, forfeitedPlayer, onAbort, onDownload,
 }: Props) {
   const isAmber  = currentPlayer === "A";
   const accent   = isAmber ? "var(--amber)" : "var(--cyan)";
@@ -47,8 +48,23 @@ export function CenterPanel({
         color:"#1a2535", letterSpacing:"2px", textAlign:"center", lineHeight:1,
       }}>VS</div>
 
-      {/* Turn indicator */}
-      {!isGameOver && (
+      {/* Turn indicator / placing phase */}
+      {!isGameOver && turn === 0 && (
+        <div style={{ textAlign:"center" }}>
+          <div style={{ fontSize:"9px", letterSpacing:"3px", color:"var(--text-dim)", marginBottom:"4px" }}>
+            PHASE
+          </div>
+          <div style={{
+            fontFamily:"var(--font-hud)", fontSize:"10px", fontWeight:700,
+            letterSpacing:"1px", padding:"6px 12px", borderRadius:"3px",
+            color:"var(--cyan)", background:"var(--cyan-glow)", border:"1px solid var(--cyan-dim)",
+            animation:"arrowPulse 1.4s infinite",
+          }}>
+            PLACING FLEET
+          </div>
+        </div>
+      )}
+      {!isGameOver && turn > 0 && (
         <div style={{ textAlign:"center" }}>
           <div style={{ fontSize:"9px", letterSpacing:"3px", color:"var(--text-dim)", marginBottom:"4px" }}>
             ACTIVE
@@ -76,7 +92,7 @@ export function CenterPanel({
           borderRadius:"4px",
         }}>
           <div style={{ fontSize:"9px", letterSpacing:"3px", color:"var(--text-dim)", marginBottom:"3px" }}>
-            VICTOR
+            {forfeitedPlayer ? "VICTOR BY FORFEIT" : "VICTOR"}
           </div>
           <div style={{
             fontFamily:"var(--font-hud)", fontSize:"13px", fontWeight:900,
@@ -84,6 +100,11 @@ export function CenterPanel({
           }}>
             {winner === "A" ? shortModel(modelA) : shortModel(modelB)}
           </div>
+          {forfeitedPlayer && (
+            <div style={{ fontSize:"9px", letterSpacing:"1px", color:"#ff4444", marginTop:"4px" }}>
+              {forfeitedPlayer === "A" ? shortModel(modelA) : shortModel(modelB)} DISQUALIFIED
+            </div>
+          )}
         </div>
       )}
 
