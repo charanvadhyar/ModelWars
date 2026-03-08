@@ -17,7 +17,7 @@ export interface QuizRunnerOptions {
   modelB: string;
   emitter: MatchEventEmitter;
   onQuizStart?:    (quizId: string, topic: string) => Promise<void>;
-  onQuestionAsked?(quizId: string, question: QuizQuestion) => Promise<void>;
+  onQuestionAsked?: (quizId: string, question: QuizQuestion) => Promise<void>;
   onAnswerGraded?: (quizId: string, questionId: string, answer: string, score: number, feedback: string) => Promise<void>;
   onQuizComplete?: (quizId: string, state: QuizState) => Promise<void>;
 }

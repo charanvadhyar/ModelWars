@@ -1,7 +1,7 @@
 "use client";
 // app/quiz/[id]/page.tsx — Live Quiz Arena spectator page
 
-import { useState, useRef } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useQuizSocket } from "../../../hooks/useQuizSocket";
 import { useQuizState } from "../../../hooks/useQuizState";
 import type { QuizQuestion } from "../../../hooks/useQuizState";
