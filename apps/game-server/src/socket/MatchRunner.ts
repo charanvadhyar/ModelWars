@@ -222,7 +222,7 @@ export class MatchRunner {
       return;
     }
 
-    const { move, gameOver } = engine.applyMove({
+    const { move } = engine.applyMove({
       player,
       coord: turnResult.coord,
       reasoning: turnResult.reasoning,
@@ -247,10 +247,11 @@ export class MatchRunner {
       state: engine.getState(),
     });
 
-    // Persist move to DB (non-fatal on failure)
-    await this.onMoveComplete?.(this.matchId, move);
+    // Persist move to DB — fire and forget, never block the game loop
+    this.onMoveComplete?.(this.matchId, move);
 
-    await sleep(50);
+    // Yield one event-loop tick so socket.io can flush network writes before the next turn
+    await new Promise<void>(resolve => setImmediate(resolve));
   }
 
   // ── Private: end-of-game ──────────────────────────────────────────────────
@@ -295,6 +296,3 @@ export class MatchRunner {
   }
 }
 
-function sleep(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}

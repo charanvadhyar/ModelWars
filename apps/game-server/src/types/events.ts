@@ -4,6 +4,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 import type { GameState, Move, Player, HeatmapGrid, ShipPlacement } from "./game";
+import type { QuizState, QuizQuestion, QuizPhase } from "./quiz";
 
 export interface ServerToClientEvents {
   /** Full board snapshot — sent on join and after each move */
@@ -29,14 +30,21 @@ export interface ServerToClientEvents {
 
   /** Server-side error */
   ERROR: (payload: ErrorPayload) => void;
+
+  // ── Quiz Arena events ───────────────────────────────────────────────────────
+  QUIZ_STATE_UPDATE:    (payload: QuizStateUpdatePayload)    => void;
+  QUIZ_QUESTION_REVEAL: (payload: QuizQuestionRevealPayload) => void;
+  QUIZ_ANSWER_CHUNK:    (payload: QuizAnswerChunkPayload)    => void;
+  QUIZ_ANSWER_GRADED:   (payload: QuizAnswerGradedPayload)   => void;
+  QUIZ_PHASE_CHANGE:    (payload: QuizPhaseChangePayload)    => void;
+  QUIZ_OVER:            (payload: QuizOverPayload)           => void;
 }
 
 export interface ClientToServerEvents {
-  /** Join a match room as a spectator */
-  JOIN_MATCH: (matchId: string) => void;
-
-  /** Leave a match room */
+  JOIN_MATCH:  (matchId: string) => void;
   LEAVE_MATCH: (matchId: string) => void;
+  JOIN_QUIZ:   (quizId: string)  => void;
+  LEAVE_QUIZ:  (quizId: string)  => void;
 }
 
 // ── Payload shapes ────────────────────────────────────────────────────────────
@@ -95,4 +103,54 @@ export interface ErrorPayload {
   code: string;
   message: string;
   recoverable: boolean;
+}
+
+// ── Quiz payload shapes ───────────────────────────────────────────────────────
+
+export interface QuizStateUpdatePayload {
+  matchId: string;
+  state: QuizState;
+}
+
+export interface QuizQuestionRevealPayload {
+  matchId: string;
+  question: QuizQuestion;
+  questionNumber: number;  // 1-10
+  totalQuestions: number;
+}
+
+export interface QuizAnswerChunkPayload {
+  matchId: string;
+  questionId: string;
+  player: string;   // who is answering
+  model: string;
+  text: string;
+  done: boolean;
+}
+
+export interface QuizAnswerGradedPayload {
+  matchId: string;
+  questionId: string;
+  givenAnswer: string;
+  score: number;
+  maxMarks: number;
+  gradingFeedback: string;
+}
+
+export interface QuizPhaseChangePayload {
+  matchId: string;
+  phase: QuizPhase;
+  scoreA: number;
+  scoreB: number;
+}
+
+export interface QuizOverPayload {
+  matchId: string;
+  winner: "A" | "B" | "TIE";
+  scoreA: number;
+  scoreB: number;
+  modelA: string;
+  modelB: string;
+  topic: string;
+  durationMs: number;
 }

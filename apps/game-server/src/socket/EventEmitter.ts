@@ -14,6 +14,12 @@ import type {
   SpectatorCountPayload,
   MatchStartPayload,
   ErrorPayload,
+  QuizStateUpdatePayload,
+  QuizQuestionRevealPayload,
+  QuizAnswerChunkPayload,
+  QuizAnswerGradedPayload,
+  QuizPhaseChangePayload,
+  QuizOverPayload,
 } from "../types/events";
 
 export class MatchEventEmitter {
@@ -71,5 +77,31 @@ export class MatchEventEmitter {
   async broadcastSpectatorCount(matchId: string): Promise<void> {
     const sockets = await this.io.in(matchId).fetchSockets();
     this.spectatorCount(matchId, { matchId, count: sockets.length });
+  }
+
+  // ── Quiz Arena events ───────────────────────────────────────────────────────
+
+  quizStateUpdate(quizId: string, payload: QuizStateUpdatePayload): void {
+    this.io.to(quizId).emit("QUIZ_STATE_UPDATE", payload);
+  }
+
+  quizQuestionReveal(quizId: string, payload: QuizQuestionRevealPayload): void {
+    this.io.to(quizId).emit("QUIZ_QUESTION_REVEAL", payload);
+  }
+
+  quizAnswerChunk(quizId: string, payload: QuizAnswerChunkPayload): void {
+    this.io.to(quizId).emit("QUIZ_ANSWER_CHUNK", payload);
+  }
+
+  quizAnswerGraded(quizId: string, payload: QuizAnswerGradedPayload): void {
+    this.io.to(quizId).emit("QUIZ_ANSWER_GRADED", payload);
+  }
+
+  quizPhaseChange(quizId: string, payload: QuizPhaseChangePayload): void {
+    this.io.to(quizId).emit("QUIZ_PHASE_CHANGE", payload);
+  }
+
+  quizOver(quizId: string, payload: QuizOverPayload): void {
+    this.io.to(quizId).emit("QUIZ_OVER", payload);
   }
 }

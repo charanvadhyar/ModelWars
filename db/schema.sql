@@ -130,6 +130,49 @@ CREATE TABLE IF NOT EXISTS transcripts (
     FOREIGN KEY (match_id) REFERENCES matches (id) ON DELETE CASCADE
 );
 
+-- ── quiz_matches ──────────────────────────────────────────────────────────────
+
+CREATE TABLE IF NOT EXISTS quiz_matches (
+  id           UUID        NOT NULL DEFAULT gen_random_uuid(),
+  status       TEXT        NOT NULL DEFAULT 'PREPARING',
+  topic        TEXT        NOT NULL,
+  model_a      TEXT        NOT NULL,
+  model_b      TEXT        NOT NULL,
+  winner       TEXT,                            -- 'A', 'B', or 'TIE'
+  score_a      INTEGER,
+  score_b      INTEGER,
+  created_at   TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  completed_at TIMESTAMPTZ,
+
+  CONSTRAINT quiz_matches_pkey PRIMARY KEY (id)
+);
+
+CREATE INDEX IF NOT EXISTS quiz_matches_created_at_idx ON quiz_matches (created_at DESC);
+
+-- ── quiz_questions ────────────────────────────────────────────────────────────
+
+CREATE TABLE IF NOT EXISTS quiz_questions (
+  id               UUID        NOT NULL DEFAULT gen_random_uuid(),
+  match_id         UUID        NOT NULL,
+  asked_by         TEXT        NOT NULL CHECK (asked_by IN ('A','B')),
+  asked_to         TEXT        NOT NULL CHECK (asked_to IN ('A','B')),
+  tier             INTEGER     NOT NULL CHECK (tier IN (1,2,3)),
+  marks            INTEGER     NOT NULL CHECK (marks IN (1,2,3)),
+  question_text    TEXT        NOT NULL,
+  expected_answer  TEXT        NOT NULL,
+  given_answer     TEXT,
+  score            INTEGER,
+  grading_feedback TEXT,
+  question_order   INTEGER     NOT NULL,
+  created_at       TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+
+  CONSTRAINT quiz_questions_pkey       PRIMARY KEY (id),
+  CONSTRAINT quiz_questions_match_fkey
+    FOREIGN KEY (match_id) REFERENCES quiz_matches (id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS quiz_questions_match_idx ON quiz_questions (match_id);
+
 -- ── Migrations (idempotent — safe to re-run on existing databases) ─────────────
 
 ALTER TABLE matches ADD COLUMN IF NOT EXISTS placement_reasoning_a TEXT;

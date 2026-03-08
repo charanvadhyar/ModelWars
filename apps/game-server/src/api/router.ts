@@ -9,6 +9,8 @@ import type { IncomingMessage, ServerResponse } from "http";
 import { requireAdmin, requireAuth } from "../auth/jwt";
 import { userRepository } from "../db/UserRepository";
 import { matchRepository } from "../db/MatchRepository";
+import { quizRepository } from "../db/QuizRepository";
+import { getBlogFeed } from "../db/BlogFeed";
 import type { SocketServer } from "../socket/SocketServer";
 import { apiLimiter, authLimiter, matchLimiter } from "./rateLimit";
 
@@ -237,6 +239,72 @@ export function createRouter(socketServer: SocketServer) {
         const user = await userRepository.findById((req as any).user.sub);
         if (!user) { json(res, 404, { error: "User not found." }); return true; }
         json(res, 200, { user });
+      } catch (e: any) {
+        json(res, 500, { error: e.message });
+      }
+      return true;
+    }
+
+    // ── Quiz Arena routes ─────────────────────────────────────────────────────
+
+    // POST /api/quiz  — start a new quiz (ADMIN only)
+    if (method === "POST" && url === "/api/quiz") {
+      if (!requireAdmin(req, res)) return true;
+      if (!matchLimiter(req, res)) return true;
+      try {
+        const { modelA, modelB, topic } = await readBody(req);
+        if (!modelA || !modelB || !topic) {
+          json(res, 400, { error: "modelA, modelB and topic are required." });
+          return true;
+        }
+        const quizId = await socketServer.createQuiz({
+          modelA,
+          modelB,
+          topic: String(topic).trim().slice(0, 200),
+          createdById: (req as any).user.sub,
+        });
+        json(res, 201, { quizId, modelA, modelB, topic });
+      } catch (e: any) {
+        json(res, 500, { error: e.message });
+      }
+      return true;
+    }
+
+    // GET /api/quiz  — list recent quizzes (public)
+    if (method === "GET" && url.startsWith("/api/quiz") && !url.match(/^\/api\/quiz\/[^/]+/)) {
+      try {
+        const quizzes = await quizRepository.listQuizzes(20, 0);
+        json(res, 200, { quizzes });
+      } catch (e: any) {
+        json(res, 500, { error: e.message });
+      }
+      return true;
+    }
+
+    // GET /api/quiz/:id  — quiz state
+    if (method === "GET" && url.match(/^\/api\/quiz\/[^/]+$/)) {
+      const quizId = url.split("/")[3];
+      try {
+        const quiz = await quizRepository.getQuiz(quizId);
+        if (!quiz) { json(res, 404, { error: "Quiz not found." }); return true; }
+        json(res, 200, quiz);
+      } catch (e: any) {
+        json(res, 500, { error: e.message });
+      }
+      return true;
+    }
+
+    // ── Intelligence Log (Blog) ────────────────────────────────────────────────
+
+    // GET /api/blog  — unified feed of all model outputs (public)
+    if (method === "GET" && url.startsWith("/api/blog")) {
+      try {
+        const qs     = new URLSearchParams(req.url?.split("?")[1] ?? "");
+        const limit  = Math.min(parseInt(qs.get("limit")  ?? "30", 10), 100);
+        const offset = parseInt(qs.get("offset") ?? "0", 10);
+        const arena  = qs.get("arena") ?? undefined;  // "battleship" | "quiz" | undefined
+        const posts  = await getBlogFeed({ limit, offset, arena });
+        json(res, 200, { posts, limit, offset });
       } catch (e: any) {
         json(res, 500, { error: e.message });
       }

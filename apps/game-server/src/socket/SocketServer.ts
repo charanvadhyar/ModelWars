@@ -9,7 +9,9 @@ import { Server as SocketIOServer, Socket } from "socket.io";
 import { MatchEventEmitter } from "./EventEmitter";
 import { MatchRegistry } from "./MatchRegistry";
 import { MatchRunner } from "./MatchRunner";
+import { QuizRunner } from "../quiz/QuizRunner";
 import { matchRepository } from "../db/MatchRepository";
+import { quizRepository } from "../db/QuizRepository";
 import type {
   ServerToClientEvents,
   ClientToServerEvents,
@@ -26,10 +28,19 @@ export interface CreateMatchOptions {
   createdById?: string;
 }
 
+export interface CreateQuizOptions {
+  modelA: string;
+  modelB: string;
+  topic: string;
+  quizId?: string;
+  createdById?: string;
+}
+
 export class SocketServer {
   private readonly io: SocketIOServer<ClientToServerEvents, ServerToClientEvents>;
   readonly emitter: MatchEventEmitter;
   readonly registry: MatchRegistry;
+  private readonly quizzes = new Map<string, QuizRunner>();
 
   constructor(httpServer: HttpServer, options: SocketServerOptions) {
     this.io = new SocketIOServer(httpServer, {
@@ -105,6 +116,53 @@ export class SocketServer {
     return runner.matchId;
   }
 
+  async createQuiz(options: CreateQuizOptions): Promise<string> {
+    const runner = new QuizRunner({
+      quizId:  options.quizId,
+      topic:   options.topic,
+      modelA:  options.modelA,
+      modelB:  options.modelB,
+      emitter: this.emitter,
+
+      onQuizStart: async (quizId, topic) => {
+        await quizRepository.createQuiz({
+          quizId,
+          topic,
+          modelA: options.modelA,
+          modelB: options.modelB,
+        });
+      },
+
+      onQuestionAsked: async (quizId, question) => {
+        await quizRepository.saveQuestion(quizId, question).catch((err) => {
+          console.error(`[DB] Failed to save quiz question ${question.id}:`, err);
+        });
+      },
+
+      onAnswerGraded: async (quizId, questionId, answer, score, feedback) => {
+        await quizRepository.updateAnswer(questionId, answer, score, feedback).catch((err) => {
+          console.error(`[DB] Failed to update quiz answer ${questionId}:`, err);
+        });
+      },
+
+      onQuizComplete: async (quizId, state) => {
+        await quizRepository.completeQuiz(quizId, state).catch((err) => {
+          console.error(`[DB] Failed to complete quiz ${quizId}:`, err);
+        });
+        setTimeout(() => this.quizzes.delete(quizId), 30_000);
+      },
+    });
+
+    this.quizzes.set(runner.quizId, runner);
+
+    runner.start().catch((err) => {
+      console.error(`[SocketServer] Quiz ${runner.quizId} crashed:`, err);
+      this.quizzes.delete(runner.quizId);
+    });
+
+    return runner.quizId;
+  }
+
   abortMatch(matchId: string): boolean {
     const runner = this.registry.get(matchId);
     if (!runner) return false;
@@ -166,6 +224,35 @@ export class SocketServer {
       socket.on("LEAVE_MATCH", async (matchId: string) => {
         await socket.leave(matchId);
         await this.emitter.broadcastSpectatorCount(matchId);
+      });
+
+      // ── Quiz socket events ─────────────────────────────────────────────────
+
+      socket.on("JOIN_QUIZ", async (quizId: string) => {
+        if (typeof quizId !== "string" || quizId.length > 64) {
+          socket.emit("ERROR", { code: "INVALID_QUIZ_ID", message: "Invalid quiz ID format.", recoverable: false });
+          return;
+        }
+
+        const liveRunner = this.quizzes.get(quizId);
+        const exists = liveRunner != null ||
+          (await quizRepository.getQuiz(quizId).then(q => q != null).catch(() => false));
+
+        if (!exists) {
+          socket.emit("ERROR", { code: "QUIZ_NOT_FOUND", message: `Quiz "${quizId}" not found.`, recoverable: false });
+          return;
+        }
+
+        await socket.join(quizId);
+
+        // Send current state to late joiners
+        if (liveRunner) {
+          socket.emit("QUIZ_STATE_UPDATE", { matchId: quizId, state: liveRunner.getState() });
+        }
+      });
+
+      socket.on("LEAVE_QUIZ", async (quizId: string) => {
+        await socket.leave(quizId);
       });
 
       socket.on("disconnect", async () => {
