@@ -16,9 +16,10 @@ if (!process.env.DATABASE_URL) {
 }
 
 const sql = postgres(process.env.DATABASE_URL, {
-  max: 10,                // max pool connections
-  idle_timeout: 20,       // close idle connections after 20s
-  connect_timeout: 10,    // fail fast if DB is unreachable
+  max: 3,                 // Supabase free tier pooler limit is ~15; keep headroom
+  idle_timeout: 30,       // keep connections alive longer to avoid churn
+  connect_timeout: 30,    // Render + Supabase cold-start can take ~20s
+  max_lifetime: 1800,     // recycle connections every 30min
   transform: {
     // Map snake_case DB columns → camelCase JS automatically
     column: postgres.toCamel,
