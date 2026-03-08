@@ -1,136 +1,215 @@
 // ─────────────────────────────────────────────────────────────────────────────
 // apps/game-server/src/db/BlogFeed.ts
-// Unified Intelligence Log — all model reasoning and outputs from both arenas,
-// merged into a single chronological feed via a UNION query.
+// Intelligence Log — one post per match/quiz, with full reasoning inside.
 // ─────────────────────────────────────────────────────────────────────────────
 
 import sql from "./pool";
 
 export type BlogArena = "battleship" | "quiz";
 
-export interface BlogPost {
+export interface BlogMatchSummary {
   id: string;
   arena: BlogArena;
-  /** What kind of output this is */
-  type:
-    | "BATTLESHIP_REASONING"
-    | "QUIZ_QUESTION_GEN"
-    | "QUIZ_ANSWER"
-    | "QUIZ_GRADING";
-  /** The model that produced this output */
-  model: string;
-  player: "A" | "B";
-  /** Primary content — the reasoning or answer text */
-  content: string;
-  /** Short descriptor — e.g. "Turn 5 · E7 · HIT" or "Q3 · Tier II · 2/2" */
-  context: string;
-  /** The question or move prompt this is responding to (for quiz answers) */
-  prompt?: string;
-  /** Source match/quiz ID */
-  sourceId: string;
-  /** Arena-specific URL path for linking */
-  sourceUrl: string;
+  modelA: string;
+  modelB: string;
+  winner: string | null;
+  // battleship-specific
+  totalTurns?: number;
+  durationMs?: number;
+  // quiz-specific
+  topic?: string;
+  scoreA?: number;
+  scoreB?: number;
   createdAt: string;
+  completedAt: string | null;
 }
 
-export async function getBlogFeed(params: {
+export interface BattleshipTurnEntry {
+  turnNumber: number;
+  player: "A" | "B";
+  model: string;
+  coord: string;
+  result: string;
+  shipSunkId: string | null;
+  reasoning: string;
+  strategyTag: string | null;
+  promptTokens: number;
+  completionTokens: number;
+  latencyMs: number;
+}
+
+export interface QuizEntryBlock {
+  order: number;
+  askedBy: "A" | "B";
+  askedByModel: string;
+  askedTo: "A" | "B";
+  askedToModel: string;
+  tier: number;
+  marks: number;
+  question: string;
+  expectedAnswer: string;
+  givenAnswer: string | null;
+  score: number | null;
+  gradingFeedback: string | null;
+}
+
+// ── Listing ───────────────────────────────────────────────────────────────────
+
+export async function getBlogListing(params: {
   limit?: number;
   offset?: number;
   arena?: string;
-}): Promise<BlogPost[]> {
-  const { limit = 30, offset = 0, arena } = params;
+}): Promise<BlogMatchSummary[]> {
+  const { limit = 20, offset = 0, arena } = params;
 
-  // Battleship reasoning entries — one per turn per model
   const battleshipRows = arena === "quiz" ? [] : await sql<any[]>`
     SELECT
-      m.id,
-      'battleship'            AS arena,
-      'BATTLESHIP_REASONING'  AS type,
-      CASE m.player WHEN 'A' THEN ma.model_a ELSE ma.model_b END AS model,
-      m.player,
-      m.reasoning             AS content,
-      'Turn ' || m.turn_number || ' · ' || m.coordinate || ' · ' || m.result AS context,
-      NULL                    AS prompt,
-      m.match_id              AS source_id,
-      m.created_at
-    FROM moves m
-    JOIN matches ma ON m.match_id = ma.id
-    WHERE m.reasoning IS NOT NULL
-      AND length(m.reasoning) > 10
-    ORDER BY m.created_at DESC
-    LIMIT ${limit * 2}
+      id, 'battleship' AS arena,
+      model_a, model_b, winner,
+      total_turns, duration_ms,
+      NULL AS topic, NULL AS score_a, NULL AS score_b,
+      created_at, completed_at
+    FROM matches
+    WHERE status = 'COMPLETED'
+    ORDER BY completed_at DESC
+    LIMIT ${limit}
   `;
 
-  // Quiz answer entries — each model answering a question
-  const quizAnswerRows = arena === "battleship" ? [] : await sql<any[]>`
+  const quizRows = arena === "battleship" ? [] : await sql<any[]>`
     SELECT
-      qq.id,
-      'quiz'       AS arena,
-      'QUIZ_ANSWER' AS type,
-      CASE qq.asked_to WHEN 'A' THEN qm.model_a ELSE qm.model_b END AS model,
-      qq.asked_to  AS player,
-      qq.given_answer AS content,
-      'Q' || qq.question_order || ' · Tier ' || qq.tier || ' · ' ||
-        COALESCE(qq.score::text, '?') || '/' || qq.marks AS context,
-      qq.question_text AS prompt,
-      qq.match_id      AS source_id,
-      qq.created_at
-    FROM quiz_questions qq
-    JOIN quiz_matches qm ON qq.match_id = qm.id
-    WHERE qq.given_answer IS NOT NULL
-      AND length(qq.given_answer) > 10
-    ORDER BY qq.created_at DESC
-    LIMIT ${limit * 2}
+      id, 'quiz' AS arena,
+      model_a, model_b, winner,
+      NULL AS total_turns, NULL AS duration_ms,
+      topic, score_a, score_b,
+      created_at, completed_at
+    FROM quiz_matches
+    WHERE status = 'COMPLETED'
+    ORDER BY completed_at DESC
+    LIMIT ${limit}
   `;
 
-  // Quiz grading entries — each model grading the opponent's answer
-  const quizGradingRows = arena === "battleship" ? [] : await sql<any[]>`
-    SELECT
-      qq.id || '-grade'  AS id,
-      'quiz'             AS arena,
-      'QUIZ_GRADING'     AS type,
-      CASE qq.asked_by WHEN 'A' THEN qm.model_a ELSE qm.model_b END AS model,
-      qq.asked_by  AS player,
-      qq.grading_feedback AS content,
-      'Graded Q' || qq.question_order || ' · ' ||
-        COALESCE(qq.score::text,'?') || '/' || qq.marks || ' pts' AS context,
-      qq.question_text AS prompt,
-      qq.match_id      AS source_id,
-      qq.created_at
-    FROM quiz_questions qq
-    JOIN quiz_matches qm ON qq.match_id = qm.id
-    WHERE qq.grading_feedback IS NOT NULL
-      AND length(qq.grading_feedback) > 5
-    ORDER BY qq.created_at DESC
-    LIMIT ${limit * 2}
-  `;
-
-  // Merge, sort by date descending, paginate
-  const all: BlogPost[] = [
-    ...battleshipRows,
-    ...quizAnswerRows,
-    ...quizGradingRows,
-  ]
+  return [...battleshipRows, ...quizRows]
     .map(r => ({
-      id:        String(r.id),
-      arena:     r.arena as BlogArena,
-      type:      r.type,
-      model:     r.model ?? "Unknown",
-      player:    r.player,
-      content:   String(r.content ?? "").trim(),
-      context:   String(r.context ?? "").trim(),
-      prompt:    r.prompt ? String(r.prompt).trim() : undefined,
-      sourceId:  String(r.sourceId ?? r.source_id ?? ""),
-      sourceUrl: r.arena === "battleship"
-        ? `/match/${r.sourceId ?? r.source_id}`
-        : `/quiz/${r.sourceId ?? r.source_id}`,
-      createdAt: r.createdAt instanceof Date
-        ? r.createdAt.toISOString()
-        : String(r.createdAt ?? r.created_at ?? ""),
+      id:          r.id,
+      arena:       r.arena as BlogArena,
+      modelA:      r.modelA ?? r.model_a,
+      modelB:      r.modelB ?? r.model_b,
+      winner:      r.winner ?? null,
+      totalTurns:  r.totalTurns ?? r.total_turns ?? undefined,
+      durationMs:  r.durationMs ?? r.duration_ms ?? undefined,
+      topic:       r.topic ?? undefined,
+      scoreA:      r.scoreA ?? r.score_a ?? undefined,
+      scoreB:      r.scoreB ?? r.score_b ?? undefined,
+      createdAt:   (r.createdAt ?? r.created_at ?? new Date()).toISOString?.() ?? String(r.createdAt ?? r.created_at),
+      completedAt: r.completedAt ?? r.completed_at
+        ? (r.completedAt ?? r.completed_at).toISOString?.() ?? String(r.completedAt ?? r.completed_at)
+        : null,
     }))
-    .filter(p => p.content.length > 0)
-    .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
+    .sort((a, b) => new Date(b.completedAt ?? b.createdAt).getTime() - new Date(a.completedAt ?? a.createdAt).getTime())
     .slice(offset, offset + limit);
+}
 
-  return all;
+// ── Match detail ──────────────────────────────────────────────────────────────
+
+export async function getBattleshipPost(matchId: string): Promise<{
+  match: BlogMatchSummary;
+  turns: BattleshipTurnEntry[];
+} | null> {
+  const [match] = await sql<any[]>`
+    SELECT id, model_a, model_b, winner, total_turns, duration_ms, created_at, completed_at
+    FROM matches WHERE id = ${matchId}
+  `;
+  if (!match) return null;
+
+  const moves = await sql<any[]>`
+    SELECT turn_number, player, coordinate, result, ship_sunk_id,
+           reasoning, strategy_tag,
+           prompt_tokens, completion_tokens, latency_ms
+    FROM moves WHERE match_id = ${matchId}
+    ORDER BY turn_number ASC
+  `;
+
+  const modelA = match.modelA ?? match.model_a;
+  const modelB = match.modelB ?? match.model_b;
+
+  return {
+    match: {
+      id:         match.id,
+      arena:      "battleship",
+      modelA,
+      modelB,
+      winner:     match.winner ?? null,
+      totalTurns: match.totalTurns ?? match.total_turns,
+      durationMs: match.durationMs ?? match.duration_ms,
+      createdAt:  (match.createdAt ?? match.created_at).toISOString(),
+      completedAt: match.completedAt ?? match.completed_at
+        ? (match.completedAt ?? match.completed_at).toISOString()
+        : null,
+    },
+    turns: moves.map(m => ({
+      turnNumber:       m.turnNumber ?? m.turn_number,
+      player:           m.player,
+      model:            m.player === "A" ? modelA : modelB,
+      coord:            m.coordinate,
+      result:           m.result,
+      shipSunkId:       m.shipSunkId ?? m.ship_sunk_id ?? null,
+      reasoning:        m.reasoning ?? "",
+      strategyTag:      m.strategyTag ?? m.strategy_tag ?? null,
+      promptTokens:     m.promptTokens ?? m.prompt_tokens,
+      completionTokens: m.completionTokens ?? m.completion_tokens,
+      latencyMs:        m.latencyMs ?? m.latency_ms,
+    })),
+  };
+}
+
+export async function getQuizPost(quizId: string): Promise<{
+  match: BlogMatchSummary;
+  questions: QuizEntryBlock[];
+} | null> {
+  const [quiz] = await sql<any[]>`
+    SELECT id, model_a, model_b, winner, topic, score_a, score_b, created_at, completed_at
+    FROM quiz_matches WHERE id = ${quizId}
+  `;
+  if (!quiz) return null;
+
+  const questions = await sql<any[]>`
+    SELECT asked_by, asked_to, tier, marks, question_text, expected_answer,
+           given_answer, score, grading_feedback, question_order
+    FROM quiz_questions WHERE match_id = ${quizId}
+    ORDER BY asked_by, question_order ASC
+  `;
+
+  const modelA = quiz.modelA ?? quiz.model_a;
+  const modelB = quiz.modelB ?? quiz.model_b;
+
+  return {
+    match: {
+      id:          quiz.id,
+      arena:       "quiz",
+      modelA,
+      modelB,
+      winner:      quiz.winner ?? null,
+      topic:       quiz.topic,
+      scoreA:      quiz.scoreA ?? quiz.score_a,
+      scoreB:      quiz.scoreB ?? quiz.score_b,
+      createdAt:   (quiz.createdAt ?? quiz.created_at).toISOString(),
+      completedAt: quiz.completedAt ?? quiz.completed_at
+        ? (quiz.completedAt ?? quiz.completed_at).toISOString()
+        : null,
+    },
+    questions: questions.map(q => ({
+      order:         q.questionOrder ?? q.question_order,
+      askedBy:       q.askedBy ?? q.asked_by,
+      askedByModel:  (q.askedBy ?? q.asked_by) === "A" ? modelA : modelB,
+      askedTo:       q.askedTo ?? q.asked_to,
+      askedToModel:  (q.askedTo ?? q.asked_to) === "A" ? modelA : modelB,
+      tier:          q.tier,
+      marks:         q.marks,
+      question:      q.questionText ?? q.question_text,
+      expectedAnswer: q.expectedAnswer ?? q.expected_answer,
+      givenAnswer:   q.givenAnswer ?? q.given_answer ?? null,
+      score:         q.score ?? null,
+      gradingFeedback: q.gradingFeedback ?? q.grading_feedback ?? null,
+    })),
+  };
 }

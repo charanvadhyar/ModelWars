@@ -1,5 +1,5 @@
 "use client";
-// app/blog/page.tsx — Intelligence Log: live feed of all model outputs
+// app/blog/page.tsx — Intelligence Log: one card per completed match/quiz
 
 import { useState, useEffect, useCallback, useRef } from "react";
 import Link from "next/link";
@@ -7,32 +7,23 @@ import Link from "next/link";
 const SERVER = process.env.NEXT_PUBLIC_GAME_SERVER_URL ?? "http://localhost:3001";
 
 type Arena = "all" | "battleship" | "quiz";
-type PostType = "BATTLESHIP_REASONING" | "QUIZ_ANSWER" | "QUIZ_GRADING";
 
-interface BlogPost {
+interface MatchCard {
   id: string;
   arena: "battleship" | "quiz";
-  type: PostType;
-  model: string;
-  player: "A" | "B";
-  content: string;
-  context: string;
-  prompt?: string;
-  sourceId: string;
-  sourceUrl: string;
+  modelA: string;
+  modelB: string;
+  winner: string | null;
+  // battleship
+  totalTurns?: number;
+  durationMs?: number;
+  // quiz
+  topic?: string;
+  scoreA?: number;
+  scoreB?: number;
   createdAt: string;
+  completedAt: string | null;
 }
-
-const TYPE_META: Record<PostType, { label: string; color: string; icon: string }> = {
-  BATTLESHIP_REASONING: { label: "TACTICAL REASONING", color: "var(--amber)",  icon: "◈" },
-  QUIZ_ANSWER:          { label: "QUIZ ANSWER",         color: "var(--cyan)",   icon: "◎" },
-  QUIZ_GRADING:         { label: "GRADING FEEDBACK",    color: "#ff4488",       icon: "◇" },
-};
-
-const ARENA_COLOR: Record<string, string> = {
-  battleship: "var(--amber)",
-  quiz:       "#ff4488",
-};
 
 function timeAgo(iso: string): string {
   const diff = Date.now() - new Date(iso).getTime();
@@ -45,22 +36,26 @@ function timeAgo(iso: string): string {
   return `${Math.floor(h / 24)}d ago`;
 }
 
+function shortModel(name: string) {
+  return name.split("-").slice(0, 2).join("-");
+}
+
 export default function BlogPage() {
-  const [posts, setPosts]         = useState<BlogPost[]>([]);
-  const [arena, setArena]         = useState<Arena>("all");
-  const [loading, setLoading]     = useState(true);
+  const [posts, setPosts]             = useState<MatchCard[]>([]);
+  const [arena, setArena]             = useState<Arena>("all");
+  const [loading, setLoading]         = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
-  const [offset, setOffset]       = useState(0);
-  const [hasMore, setHasMore]     = useState(true);
-  const loadedIds                 = useRef(new Set<string>());
-  const LIMIT = 30;
+  const [offset, setOffset]           = useState(0);
+  const [hasMore, setHasMore]         = useState(true);
+  const loadedIds                     = useRef(new Set<string>());
+  const LIMIT = 20;
 
   const fetchPosts = useCallback(async (off: number, append: boolean) => {
     const arenaParam = arena === "all" ? "" : `&arena=${arena}`;
     const res = await fetch(`${SERVER}/api/blog?limit=${LIMIT}&offset=${off}${arenaParam}`);
     if (!res.ok) return;
     const data = await res.json();
-    const incoming: BlogPost[] = (data.posts ?? []).filter((p: BlogPost) => {
+    const incoming: MatchCard[] = (data.posts ?? []).filter((p: MatchCard) => {
       if (loadedIds.current.has(p.id)) return false;
       loadedIds.current.add(p.id);
       return true;
@@ -74,7 +69,6 @@ export default function BlogPage() {
     setHasMore(incoming.length === LIMIT);
   }, [arena]);
 
-  // Initial load + arena filter changes
   useEffect(() => {
     setLoading(true);
     setOffset(0);
@@ -83,23 +77,22 @@ export default function BlogPage() {
     fetchPosts(0, false).finally(() => setLoading(false));
   }, [arena, fetchPosts]);
 
-  // Live poll — only for new posts at offset 0
+  // Poll for new completed matches
   useEffect(() => {
     const id = setInterval(() => {
-      fetch(`${SERVER}/api/blog?limit=10&offset=0${arena === "all" ? "" : `&arena=${arena}`}`)
+      const arenaParam = arena === "all" ? "" : `&arena=${arena}`;
+      fetch(`${SERVER}/api/blog?limit=5&offset=0${arenaParam}`)
         .then(r => r.json())
         .then(data => {
-          const incoming: BlogPost[] = (data.posts ?? []).filter((p: BlogPost) => {
+          const incoming: MatchCard[] = (data.posts ?? []).filter((p: MatchCard) => {
             if (loadedIds.current.has(p.id)) return false;
             loadedIds.current.add(p.id);
             return true;
           });
-          if (incoming.length > 0) {
-            setPosts(prev => [...incoming, ...prev]);
-          }
+          if (incoming.length > 0) setPosts(prev => [...incoming, ...prev]);
         })
         .catch(() => {});
-    }, 10_000);
+    }, 15_000);
     return () => clearInterval(id);
   }, [arena]);
 
@@ -113,9 +106,8 @@ export default function BlogPage() {
 
   return (
     <div style={{ minHeight: "100vh", background: "var(--bg)", fontFamily: "var(--font-mono)", padding: "24px 20px" }}>
-
-      {/* ── Header ────────────────────────────────────────────────────────── */}
       <div style={{ maxWidth: "760px", margin: "0 auto" }}>
+
         <Link href="/" style={{ fontSize: "10px", letterSpacing: "3px", color: "var(--text-dim)", textDecoration: "none" }}>
           ← MODEL WARS
         </Link>
@@ -125,11 +117,11 @@ export default function BlogPage() {
             INTELLIGENCE LOG
           </h1>
           <div style={{ fontSize: "10px", letterSpacing: "3px", color: "var(--text-dim)" }}>
-            LIVE FEED · ALL MODEL REASONING &amp; OUTPUTS
+            COMPLETED MATCHES &amp; QUIZZES · FULL AI REASONING INSIDE
           </div>
         </div>
 
-        {/* ── Filter bar ──────────────────────────────────────────────────── */}
+        {/* Filter bar */}
         <div style={{ display: "flex", gap: "8px", marginBottom: "20px" }}>
           {(["all", "battleship", "quiz"] as Arena[]).map(a => (
             <button
@@ -155,28 +147,26 @@ export default function BlogPage() {
               {a === "all" ? "ALL" : a === "battleship" ? "BATTLESHIP" : "QUIZ"}
             </button>
           ))}
-
           <div style={{ marginLeft: "auto", fontSize: "10px", color: "var(--text-dim)", display: "flex", alignItems: "center", gap: "6px" }}>
             <span style={{ width: "5px", height: "5px", borderRadius: "50%", display: "inline-block", background: "#44ff88", animation: "pulseDot 2s infinite" }} />
             LIVE
           </div>
         </div>
 
-        {/* ── Feed ────────────────────────────────────────────────────────── */}
+        {/* Feed */}
         {loading ? (
           <div style={{ textAlign: "center", padding: "48px", color: "var(--text-dim)", fontSize: "11px", letterSpacing: "3px", animation: "pulseDot 1.2s infinite" }}>
             LOADING INTELLIGENCE LOG...
           </div>
         ) : posts.length === 0 ? (
           <div style={{ textAlign: "center", padding: "48px", color: "var(--text-dim)", fontSize: "12px" }}>
-            No entries yet. Start a match or quiz to populate the log.
+            No completed matches yet. Start a match or quiz.
           </div>
         ) : (
-          <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
+          <div style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
             {posts.map(post => (
-              <PostCard key={post.id} post={post} />
+              <MatchPostCard key={post.id} post={post} />
             ))}
-
             {hasMore && (
               <button
                 onClick={handleLoadMore}
@@ -197,68 +187,81 @@ export default function BlogPage() {
   );
 }
 
-function PostCard({ post }: { post: BlogPost }) {
-  const [expanded, setExpanded] = useState(false);
-  const meta = TYPE_META[post.type] ?? { label: post.type, color: "var(--text-dim)", icon: "○" };
-  const playerColor = post.player === "A" ? "var(--amber)" : "var(--cyan)";
-  const shortModel = post.model.split("-").slice(0, 2).join("-");
+function MatchPostCard({ post }: { post: MatchCard }) {
+  const isBattleship = post.arena === "battleship";
+  const arenaColor   = isBattleship ? "var(--amber)" : "#ff4488";
+  const arenaLabel   = isBattleship ? "BATTLESHIP" : "QUIZ";
+  const detailUrl    = isBattleship ? `/blog/match/${post.id}` : `/blog/quiz/${post.id}`;
 
-  // Truncate long content
-  const PREVIEW_LEN = 280;
-  const isLong = post.content.length > PREVIEW_LEN;
-  const displayContent = !expanded && isLong
-    ? post.content.slice(0, PREVIEW_LEN) + "…"
-    : post.content;
+  const winnerModel = post.winner === "A" ? post.modelA
+                    : post.winner === "B" ? post.modelB
+                    : null;
 
   return (
-    <article style={{ border: "1px solid rgba(255,255,255,0.07)", borderRadius: "4px", overflow: "hidden", background: "rgba(255,255,255,0.01)" }}>
-      {/* Top bar */}
-      <div style={{ display: "flex", alignItems: "center", gap: "10px", padding: "9px 14px", background: "rgba(255,255,255,0.025)", borderBottom: "1px solid rgba(255,255,255,0.05)" }}>
-        <span style={{ fontSize: "10px", letterSpacing: "2px", color: meta.color }}>{meta.icon} {meta.label}</span>
-        <span style={{ width: "1px", height: "10px", background: "rgba(255,255,255,0.1)" }} />
-        <span style={{ fontSize: "10px", color: ARENA_COLOR[post.arena], letterSpacing: "1px" }}>
-          {post.arena === "battleship" ? "BATTLESHIP" : "QUIZ"}
-        </span>
-        <span style={{ fontSize: "10px", color: playerColor, letterSpacing: "1px" }}>PLAYER {post.player}</span>
-        <span style={{ flex: 1, fontSize: "11px", color: "var(--text-dim)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-          {shortModel}
-        </span>
-        <span style={{ fontSize: "9px", color: "var(--text-dim)", whiteSpace: "nowrap" }}>
-          {timeAgo(post.createdAt)}
-        </span>
-      </div>
+    <Link href={detailUrl} style={{ textDecoration: "none" }}>
+      <article style={{ border: "1px solid rgba(255,255,255,0.07)", borderRadius: "4px", overflow: "hidden", background: "rgba(255,255,255,0.01)", cursor: "pointer" }}>
 
-      {/* Context badge */}
-      <div style={{ padding: "8px 14px 0", display: "flex", alignItems: "center", gap: "10px" }}>
-        <span style={{ fontSize: "9px", letterSpacing: "2px", color: "rgba(255,255,255,0.25)", background: "rgba(255,255,255,0.04)", padding: "2px 8px", borderRadius: "2px" }}>
-          {post.context}
-        </span>
-        <Link href={post.sourceUrl} style={{ fontSize: "9px", color: "var(--text-dim)", textDecoration: "none", letterSpacing: "1px" }}>
-          VIEW SOURCE →
-        </Link>
-      </div>
-
-      {/* Prompt (for quiz answers) */}
-      {post.prompt && (
-        <div style={{ padding: "8px 14px 0", fontSize: "11px", color: "var(--text-dim)", fontStyle: "italic", borderLeft: "2px solid rgba(255,255,255,0.08)", marginLeft: "14px" }}>
-          {post.prompt}
+        {/* Top bar */}
+        <div style={{ display: "flex", alignItems: "center", gap: "10px", padding: "9px 14px", background: "rgba(255,255,255,0.025)", borderBottom: "1px solid rgba(255,255,255,0.05)" }}>
+          <span style={{ fontSize: "10px", letterSpacing: "2px", color: arenaColor }}>◈ {arenaLabel}</span>
+          {post.topic && (
+            <>
+              <span style={{ width: "1px", height: "10px", background: "rgba(255,255,255,0.1)" }} />
+              <span style={{ fontSize: "10px", color: "var(--text-dim)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", flex: 1 }}>
+                {post.topic.toUpperCase()}
+              </span>
+            </>
+          )}
+          <span style={{ marginLeft: "auto", fontSize: "9px", color: "var(--text-dim)", whiteSpace: "nowrap" }}>
+            {timeAgo(post.completedAt ?? post.createdAt)}
+          </span>
         </div>
-      )}
 
-      {/* Content */}
-      <div style={{ padding: "10px 14px 12px" }}>
-        <p style={{ margin: 0, fontSize: "13px", color: "var(--text)", lineHeight: 1.7, whiteSpace: "pre-wrap", wordBreak: "break-word" }}>
-          {displayContent}
-        </p>
-        {isLong && (
-          <button
-            onClick={() => setExpanded(e => !e)}
-            style={{ marginTop: "6px", background: "none", border: "none", color: "var(--text-dim)", fontFamily: "var(--font-mono)", fontSize: "10px", letterSpacing: "2px", cursor: "pointer", padding: 0 }}
-          >
-            {expanded ? "▲ COLLAPSE" : "▼ EXPAND"}
-          </button>
-        )}
-      </div>
-    </article>
+        {/* Body */}
+        <div style={{ padding: "12px 14px", display: "flex", alignItems: "center", gap: "16px" }}>
+
+          {/* Models + winner */}
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "4px" }}>
+              <span style={{ fontSize: "12px", color: post.winner === "A" ? "var(--amber)" : "var(--text)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                {shortModel(post.modelA)}
+              </span>
+              <span style={{ fontSize: "10px", color: "var(--text-dim)" }}>vs</span>
+              <span style={{ fontSize: "12px", color: post.winner === "B" ? "var(--cyan)" : "var(--text)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                {shortModel(post.modelB)}
+              </span>
+            </div>
+            {winnerModel ? (
+              <div style={{ fontSize: "10px", color: "var(--text-dim)" }}>
+                winner: <span style={{ color: post.winner === "A" ? "var(--amber)" : "var(--cyan)" }}>{shortModel(winnerModel)}</span>
+              </div>
+            ) : post.winner === "TIE" ? (
+              <div style={{ fontSize: "10px", color: "var(--text-dim)" }}>draw</div>
+            ) : null}
+          </div>
+
+          {/* Stats */}
+          {isBattleship && post.totalTurns != null && (
+            <div style={{ textAlign: "right", flexShrink: 0 }}>
+              <div style={{ fontFamily: "var(--font-hud)", fontSize: "22px", color: "var(--amber)", letterSpacing: "1px" }}>{post.totalTurns}</div>
+              <div style={{ fontSize: "9px", color: "var(--text-dim)", letterSpacing: "1px" }}>TURNS</div>
+            </div>
+          )}
+
+          {!isBattleship && post.scoreA != null && post.scoreB != null && (
+            <div style={{ textAlign: "right", flexShrink: 0 }}>
+              <div style={{ fontFamily: "var(--font-hud)", fontSize: "22px", letterSpacing: "1px" }}>
+                <span style={{ color: "var(--amber)" }}>{post.scoreA}</span>
+                <span style={{ color: "var(--text-dim)", margin: "0 6px", fontSize: "16px" }}>—</span>
+                <span style={{ color: "var(--cyan)" }}>{post.scoreB}</span>
+              </div>
+              <div style={{ fontSize: "9px", color: "var(--text-dim)", letterSpacing: "1px" }}>SCORE</div>
+            </div>
+          )}
+
+          <div style={{ fontSize: "9px", color: "var(--text-dim)", letterSpacing: "2px", flexShrink: 0 }}>VIEW →</div>
+        </div>
+      </article>
+    </Link>
   );
 }

@@ -10,7 +10,7 @@ import { requireAdmin, requireAuth } from "../auth/jwt";
 import { userRepository } from "../db/UserRepository";
 import { matchRepository } from "../db/MatchRepository";
 import { quizRepository } from "../db/QuizRepository";
-import { getBlogFeed } from "../db/BlogFeed";
+import { getBlogListing, getBattleshipPost, getQuizPost } from "../db/BlogFeed";
 import type { SocketServer } from "../socket/SocketServer";
 import { apiLimiter, authLimiter, matchLimiter } from "./rateLimit";
 
@@ -296,14 +296,40 @@ export function createRouter(socketServer: SocketServer) {
 
     // ── Intelligence Log (Blog) ────────────────────────────────────────────────
 
-    // GET /api/blog  — unified feed of all model outputs (public)
+    // GET /api/blog/match/:id  — full battleship match post
+    if (method === "GET" && url.match(/^\/api\/blog\/match\/[^/]+$/)) {
+      const matchId = url.split("/")[4];
+      try {
+        const post = await getBattleshipPost(matchId);
+        if (!post) { json(res, 404, { error: "Match not found." }); return true; }
+        json(res, 200, post);
+      } catch (e: any) {
+        json(res, 500, { error: e.message });
+      }
+      return true;
+    }
+
+    // GET /api/blog/quiz/:id  — full quiz post
+    if (method === "GET" && url.match(/^\/api\/blog\/quiz\/[^/]+$/)) {
+      const quizId = url.split("/")[4];
+      try {
+        const post = await getQuizPost(quizId);
+        if (!post) { json(res, 404, { error: "Quiz not found." }); return true; }
+        json(res, 200, post);
+      } catch (e: any) {
+        json(res, 500, { error: e.message });
+      }
+      return true;
+    }
+
+    // GET /api/blog  — listing: one entry per completed match/quiz
     if (method === "GET" && url.startsWith("/api/blog")) {
       try {
         const qs     = new URLSearchParams(req.url?.split("?")[1] ?? "");
-        const limit  = Math.min(parseInt(qs.get("limit")  ?? "30", 10), 100);
+        const limit  = Math.min(parseInt(qs.get("limit")  ?? "20", 10), 100);
         const offset = parseInt(qs.get("offset") ?? "0", 10);
-        const arena  = qs.get("arena") ?? undefined;  // "battleship" | "quiz" | undefined
-        const posts  = await getBlogFeed({ limit, offset, arena });
+        const arena  = qs.get("arena") ?? undefined;
+        const posts  = await getBlogListing({ limit, offset, arena });
         json(res, 200, { posts, limit, offset });
       } catch (e: any) {
         json(res, 500, { error: e.message });
