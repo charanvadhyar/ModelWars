@@ -1,33 +1,10 @@
 "use client";
-// app/quiz/page.tsx — Quiz Arena listing + admin launch panel
+// app/quiz/page.tsx — Quiz Arena listing (spectator view)
 
 import { useState, useEffect, useCallback } from "react";
 import Link from "next/link";
-import { useAuth } from "../../hooks/useAuth";
-import { useRouter } from "next/navigation";
 
 const SERVER = process.env.NEXT_PUBLIC_GAME_SERVER_URL ?? "http://localhost:3001";
-
-const MODELS = [
-  "claude-opus-4-6",
-  "claude-sonnet-4-6",
-  "claude-haiku-4-5-20251001",
-  "gpt-4o",
-  "gpt-4o-mini-2024-07-18",
-];
-
-const SUGGESTED_TOPICS = [
-  "Machine Learning & Neural Networks",
-  "World History 1900–2000",
-  "Quantum Physics",
-  "Philosophy of Mind",
-  "Climate Science",
-  "Mathematics & Number Theory",
-  "Evolutionary Biology",
-  "Computer Science Fundamentals",
-  "Economics & Game Theory",
-  "Astronomy & Cosmology",
-];
 
 const PHASE_LABEL: Record<string, string> = {
   PREPARING:   "PREPARING",
@@ -44,14 +21,7 @@ const PHASE_COLOR: Record<string, string> = {
 };
 
 export default function QuizListPage() {
-  const { user, authFetch } = useAuth();
-  const router = useRouter();
-  const [quizzes, setQuizzes]     = useState<any[]>([]);
-  const [modelA, setModelA]       = useState(MODELS[0]);
-  const [modelB, setModelB]       = useState(MODELS[4]);
-  const [topic, setTopic]         = useState("");
-  const [launching, setLaunching] = useState(false);
-  const [error, setError]         = useState("");
+  const [quizzes, setQuizzes] = useState<any[]>([]);
 
   const loadQuizzes = useCallback(async () => {
     const res = await fetch(`${SERVER}/api/quiz`);
@@ -66,27 +36,6 @@ export default function QuizListPage() {
     const interval = setInterval(loadQuizzes, 8000);
     return () => clearInterval(interval);
   }, [loadQuizzes]);
-
-  const handleLaunch = async () => {
-    if (!topic.trim()) { setError("Topic is required."); return; }
-    if (modelA === modelB) { setError("Models must be different."); return; }
-    setLaunching(true);
-    setError("");
-    try {
-      const res = await authFetch(`/api/quiz`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ modelA, modelB, topic: topic.trim() }),
-      });
-      const data = await res.json();
-      if (!res.ok) { setError(data.error ?? "Failed to launch quiz."); return; }
-      router.push(`/quiz/${data.quizId}`);
-    } catch (e: any) {
-      setError(e.message);
-    } finally {
-      setLaunching(false);
-    }
-  };
 
   return (
     <div style={{ minHeight: "100vh", background: "var(--bg)", fontFamily: "var(--font-mono)", padding: "24px 20px" }}>
@@ -119,58 +68,7 @@ export default function QuizListPage() {
           ))}
         </div>
 
-        {/* Admin launch panel */}
-        {user?.role === "ADMIN" && (
-          <div style={{ border: "1px solid rgba(255,68,136,0.3)", borderRadius: "4px", padding: "20px", background: "rgba(255,68,136,0.04)" }}>
-            <div style={{ fontSize: "10px", letterSpacing: "4px", color: "#ff4488", marginBottom: "16px" }}>LAUNCH QUIZ</div>
-
-            {/* Topic input */}
-            <div style={{ marginBottom: "12px" }}>
-              <div style={{ fontSize: "9px", letterSpacing: "2px", color: "var(--text-dim)", marginBottom: "6px" }}>TOPIC</div>
-              <input
-                value={topic}
-                onChange={e => setTopic(e.target.value)}
-                placeholder="e.g. Quantum Physics"
-                style={{ width: "100%", background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.1)", borderRadius: "3px", padding: "8px 12px", color: "var(--text)", fontFamily: "var(--font-mono)", fontSize: "13px", boxSizing: "border-box" }}
-              />
-              {/* Suggested topics */}
-              <div style={{ display: "flex", flexWrap: "wrap", gap: "6px", marginTop: "8px" }}>
-                {SUGGESTED_TOPICS.map(t => (
-                  <button key={t} onClick={() => setTopic(t)} style={{ fontSize: "9px", padding: "3px 8px", background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.08)", borderRadius: "2px", color: "var(--text-dim)", cursor: "pointer", fontFamily: "var(--font-mono)" }}>
-                    {t}
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            {/* Model selectors */}
-            <div style={{ display: "flex", gap: "12px", marginBottom: "16px" }}>
-              {[
-                { label: "PLAYER A", value: modelA, set: setModelA, color: "var(--amber)" },
-                { label: "PLAYER B", value: modelB, set: setModelB, color: "var(--cyan)" },
-              ].map(({ label, value, set, color }) => (
-                <div key={label} style={{ flex: 1 }}>
-                  <div style={{ fontSize: "9px", letterSpacing: "2px", color, marginBottom: "6px" }}>{label}</div>
-                  <select value={value} onChange={e => set(e.target.value)} style={{ width: "100%", background: "rgba(255,255,255,0.04)", border: `1px solid ${color}44`, borderRadius: "3px", padding: "7px 10px", color: "var(--text)", fontFamily: "var(--font-mono)", fontSize: "11px" }}>
-                    {MODELS.map(m => <option key={m} value={m}>{m}</option>)}
-                  </select>
-                </div>
-              ))}
-            </div>
-
-            {error && <div style={{ fontSize: "11px", color: "#ff4444", marginBottom: "10px" }}>⚠ {error}</div>}
-
-            <button
-              onClick={handleLaunch}
-              disabled={launching}
-              style={{ width: "100%", padding: "10px", background: launching ? "rgba(255,68,136,0.1)" : "rgba(255,68,136,0.15)", border: "1px solid rgba(255,68,136,0.4)", borderRadius: "3px", color: "#ff4488", fontFamily: "var(--font-mono)", fontSize: "12px", letterSpacing: "3px", cursor: launching ? "not-allowed" : "pointer" }}
-            >
-              {launching ? "LAUNCHING..." : "START QUIZ"}
-            </button>
-          </div>
-        )}
-
-        {/* Quiz history */}
+        {/* Quiz listing */}
         <div>
           <div style={{ fontSize: "9px", letterSpacing: "4px", color: "var(--text-dim)", marginBottom: "12px" }}>RECENT QUIZZES</div>
           {quizzes.length === 0 ? (
