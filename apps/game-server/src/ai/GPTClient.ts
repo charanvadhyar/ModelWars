@@ -77,7 +77,7 @@ export class GPTClient implements AIClient {
       const stream = await this.client.chat.completions.create(
         {
           model: this.model,
-          max_tokens: 1024,
+          max_tokens: 2048,
           messages: openAiMessages,
           stream: true,
           stream_options: { include_usage: true },

@@ -10,19 +10,44 @@ interface Props {
   color:      "amber" | "cyan";
 }
 
+const SECTION_LABELS = ["BOARD", "STRATEGY", "DECISION"] as const;
+
+/** Parse "LABEL: content\nLABEL: content" into typed segments */
+function parseThinkingTrail(text: string) {
+  if (!text) return null;
+
+  const segments: { label: string | null; content: string }[] = [];
+  const lines = text.split("\n");
+
+  for (const line of lines) {
+    const match = line.match(/^(BOARD|STRATEGY|DECISION):\s*(.*)/);
+    if (match) {
+      segments.push({ label: match[1], content: match[2] });
+    } else if (line.trim()) {
+      // Unlabelled line — attach to last segment or create bare entry
+      if (segments.length > 0) {
+        segments[segments.length - 1].content += " " + line.trim();
+      } else {
+        segments.push({ label: null, content: line.trim() });
+      }
+    }
+  }
+
+  return segments.length > 0 ? segments : null;
+}
+
 export function ReasoningPanel({ text, isActive, isStreaming, color }: Props) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const accent    = color === "amber" ? "var(--amber)"     : "var(--cyan)";
   const dim       = color === "amber" ? "var(--amber-dim)" : "var(--cyan-dim)";
 
-  // Auto-scroll as text streams in
   useEffect(() => {
     if (scrollRef.current && isStreaming && isActive) {
       scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
     }
   }, [text, isStreaming, isActive]);
 
-  const displayText = text || (isActive && isStreaming ? "" : "AWAITING COGNITIVE PROCESS...");
+  const segments = parseThinkingTrail(text);
 
   return (
     <div style={{
@@ -53,21 +78,51 @@ export function ReasoningPanel({ text, isActive, isStreaming, color }: Props) {
 
       {/* Text area */}
       <div ref={scrollRef} style={{
-        fontSize:"11px", lineHeight:"1.7",
-        color:"#6888a0", overflow:"hidden",
+        overflow:"auto",
         flex:1,
-        // Fade top edge for overflow text
-        WebkitMaskImage: "linear-gradient(to bottom, transparent 0%, black 15%)",
-        maskImage:        "linear-gradient(to bottom, transparent 0%, black 15%)",
+        WebkitMaskImage: "linear-gradient(to bottom, transparent 0%, black 12%)",
+        maskImage:        "linear-gradient(to bottom, transparent 0%, black 12%)",
       }}>
-        {displayText}
-        {isActive && isStreaming && (
-          <span style={{
-            display:"inline-block", width:"2px", height:"12px",
-            background: accent, verticalAlign:"text-bottom",
-            marginLeft:"2px",
-            animation:"blink 0.7s step-end infinite",
-          }} />
+        {segments ? (
+          <div style={{ display:"flex", flexDirection:"column", gap:"10px", paddingTop:"4px" }}>
+            {segments.map((seg, i) => (
+              <div key={i}>
+                {seg.label && (
+                  <div style={{
+                    fontSize:"8px", letterSpacing:"2px", fontWeight:700,
+                    color: accent, marginBottom:"3px",
+                    fontFamily:"var(--font-mono)",
+                  }}>
+                    ◈ {seg.label}
+                  </div>
+                )}
+                <div style={{
+                  fontSize:"11px", lineHeight:"1.65",
+                  color: seg.label ? "#8aa8c0" : "#6888a0",
+                }}>
+                  {seg.content}
+                </div>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <div style={{
+            fontSize:"11px", lineHeight:"1.7",
+            color:"#6888a0",
+          }}>
+            {text || (isActive && isStreaming
+              ? ""
+              : "AWAITING COGNITIVE PROCESS..."
+            )}
+            {isActive && isStreaming && (
+              <span style={{
+                display:"inline-block", width:"2px", height:"12px",
+                background: accent, verticalAlign:"text-bottom",
+                marginLeft:"2px",
+                animation:"blink 0.7s step-end infinite",
+              }} />
+            )}
+          </div>
         )}
       </div>
 

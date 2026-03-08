@@ -41,7 +41,7 @@ The JSON must match this exact schema:
 
 {
   "target": "B4",
-  "reasoning": "Explain your targeting logic in 50-500 characters",
+  "reasoning": "BOARD: [1-2 sentences: what do your hits/misses reveal about ship positions?]\nSTRATEGY: [your current approach — hunting, sinking, probability sweep — and why]\nDECISION: [why this specific cell over alternatives]",
   "strategy_tag": "one of: HUNT_MODE | PARITY_SEARCH | SINK_MODE | PROBABILITY_MAX | EDGE_CLEAR | ENDGAME",
   "probability_grid": {
     "A1": 0.02, "A2": 0.03, ... (all 100 cells, values 0.0-1.0)

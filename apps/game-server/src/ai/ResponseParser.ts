@@ -86,7 +86,7 @@ export function parseModelResponse(raw: string): ParseResult {
     };
   }
 
-  const reasoning = parsed.reasoning.trim().slice(0, 1000); // cap at 1000 chars
+  const reasoning = parsed.reasoning.trim().slice(0, 1500); // cap at 1500 chars (3 labelled sections)
 
   // ── Step 5: Validate strategy tag (optional but validated if present) ────────
   let strategyTag: StrategyTag | undefined;

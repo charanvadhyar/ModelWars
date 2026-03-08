@@ -101,12 +101,8 @@ export class AIOrchestrator {
 
       messages.push({ role: "user", content: userContent });
 
-      // Only stream reasoning chunks on the first attempt
-      // On retries, suppress streaming (response is likely malformed prose)
-      const chunkCallback: StreamChunkCallback =
-        attempt === 1
-          ? callbacks.onReasoningChunk
-          : (_text, _done) => {};
+      // Suppress raw JSON streaming — emit clean reasoning text after parse
+      const chunkCallback: StreamChunkCallback = (_text, _done) => {};
 
       let response;
       try {
@@ -162,6 +158,9 @@ export class AIOrchestrator {
         totalCompletionTokens
       );
       this.cumulativeCostUsd += costUsd;
+
+      // Emit the clean reasoning text (not raw JSON) as a single done chunk
+      callbacks.onReasoningChunk(parsed.move.reasoning, true);
 
       return {
         coord: parsed.move.target,

@@ -70,7 +70,7 @@ export class ClaudeClient implements AIClient {
       const stream = await this.client.messages.stream(
         {
           model: this.model,
-          max_tokens: 1024,
+          max_tokens: 2048,
           system: this.systemPrompt,
           messages: messages.map((m) => ({
             role: m.role,
